@@ -12,7 +12,7 @@ For reference, the layout folders created/editable by this program are structure
 
 * /name_of_your_layout/
   * /config/
-    * gleisbilder.cs2
+    * gleisbild.cs2
     * /gleisbilder/
       * layout page 1.cs2
       * layout page 2.cs2
