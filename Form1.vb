@@ -1,10 +1,11 @@
-﻿Option Compare Text ' case insensitive string comparison
+﻿Option Compare Text ' Case insensitive string comparison
 Imports System.ComponentModel
 
 Public Class Form1
-    ' CS2 Gleisbild editor
-    Const Version = "Version 2.1.2" ' 2023-11-03
-    ' 2.0.1 -> 2.1.x: A track diagram can span 255 rows and 255 colums rather than just 17 x 30. The limit of 255 is imposed by Märklin's file format
+    ' CS2 Track Diagram Editor
+    Const Version = "Version 2.1.3" ' 2023-11-04
+    ' 2.0.1 -> 2.1.x: A track diagram can span 255 rows and 255 colums rather than just 17 x 30. The limit of 255 is imposed by Märklin's file format.
+    '             .3: Display of addresses and text after edit reworked.
     ' 2.0   -> 2.0.1: pfeil address entry bug fix. Allow for leading spaces in texts. Doesn't place window as topmost.
     '  d Work-around fix for display of text and addresses after editing
     '  b Backup of deleted pages. Still to do: A mechanism for adding such pages back into the (or a) layout
@@ -32,38 +33,43 @@ Public Class Form1
     'Requires Windows 10 Or higher, a 64 bit CPU and the .NET framework 4.7.2 or higher.
 
     ' Form size
-    Const ROW_MAX = 16 ' the max size of layout we can display (counting from zero)
+    Const ROW_MAX = 16 ' size of track diagram window (counting from zero)
     Const COL_MAX = 29
     Const W_MIN = 1155 ' minimum width allowed when resizing
     Const H_MIN = 737 '  minimum height allowed when resizing
 
-    ' Editing grid position ("looking glass") over the track diagram
-    Dim Row_Offset As Integer, Col_Offset As Integer ' position of upper left corner of the gris
+    ' track diagram window position
+    Dim Row_Offset As Integer, Col_Offset As Integer ' position of upper left corner of the grid
 
     Dim Test_Level As Integer ' >=3: displays the input file, >=4 displays the output file as well
 
     Dim MODE As String = "View" ' "View" or "Edit" or "Routes" 
     Dim ROUTE_VIEW_ENABLED As Boolean = False ' This mode is only of interest to, and available for, layouts created by a cs2 and
-    ' where the rite file ("fahrstrassen.cs2") is availabe
-    Dim Use_English_Terms As Boolean = False ' set in tools menu
+    ' requires the route file ("fahrstrassen.cs2") to be availabe
+    Dim Use_English_Terms As Boolean = True ' set or cleared in tools menu
     Dim Verbose As Boolean = False ' set in tools menu
+    Dim Reveal_Text As Boolean = False
+    Dim Reveal_Addr As Boolean = False
+    Dim Reveal_Text_State As Boolean ' Records the Reveal_Text value upon entry to Route mode
+    Dim Reveal_Addr_State As Boolean ' Records the Reveal_Addr value upon entry to Route mode
+
     Dim FILE_LOADED As Boolean
 
     Dim Current_Directory As String
     Dim TrackDiagram_Directory As String ' where the track diagram files reside. Per Märklin should be named ...\gleisbilder
 
     Dim TrackDiagram_Input_Filename As String ' most recent track diagram that was loaded
-    Dim MasterFile_Directory As String ' where gleisbild.cs2 and fahrstrassen.cs2 resides, if those files are present.
+    Dim MasterFile_Directory As String ' where gleisbild.cs2 and fahrstrassen.cs2 resides, if those files are present
     Dim Flat_Structure As Boolean = False ' False if Märklin's folder structure is adhered to. Refer the comment at the top of this file.
-    Dim STAND_ALONE As Boolean = True ' False if run from command line
-    Dim CMDLINE_MODE As String = "" ' False if run from command line
+    Dim STAND_ALONE As Boolean = True ' False if the editor is run from a command line. This is the case when the editor is activated from the train control program "TC"
+    Dim CMDLINE_MODE As String = "" ' "Edit" if run from command line, otherwise "". Future versions may allow more options
     Dim Cmdline_Param1 As String
     Dim Cmdline_Param2 As String
 
-    Dim Input_Drive As String ' The drive last read or imported from. We may need it when we locate and display the image
+    Dim Input_Drive As String ' The drive last read or imported from
     Dim Start_Directory As String
     Dim Active_Tool As String = ""
-    Dim tt As New ToolTip()
+    ReadOnly tt As New ToolTip()
     Dim el_moving As ELEMENT
     Const HEADER_MAX = 10
     Dim Header_Line(HEADER_MAX) As String ' holds the header lines of the cs2 layout file up to and excluding the first line with ".element"
@@ -82,30 +88,29 @@ Public Class Form1
         Public id_normalized As String ' 6 characters, two for each of page_no, row_no, and col_no - in hex. Derived from the id.
         Public row_no As Integer ' derived form 'id' converted to decimal
         Public col_no As Integer ' derived form 'id' converted to decimal
-        ' Example: ".id=0x2070a" mwans page no 2, col no. 07 hex, row no (7 decimal), 0a hex (10 decimal)
+        ' Example: ".id=0x2070a" mwans page no 2 hex (2 decimal), col no. 07 hex (7 decimal), row no 0a hex (10 decimal)
         ' Leading zeros are omitted
 
         Public my_index As Integer ' My place in the Elements array
     End Structure
 
-    Const E_MAX = 1000 ' We can have at most E_MAX elements (gerade, bogen, ..., etc.)
-    Dim E_TOP As Integer ' We actually have E_TOP elements
+    Const E_MAX = 1000 ' We can have at most E_MAX elements (gerade, bogen, ..., etc.). This an arbitrary limit. Increase as needed.
+    Dim E_TOP As Integer ' Number of elements in track diagram (= index of last ELEMENT stored in Elements(*).
     Dim Elements(E_MAX) As ELEMENT
     Dim Empty_Element As ELEMENT = New ELEMENT
 
-    ' Temporary storage of elements prior to editing
-    Dim E_TOP2 As Integer ' We actually have E_TOP elements
+    ' Temporary storage of elements prior to editing - allows us to revert and cancel edits 
+    Dim E_TOP2 As Integer ' We actually have E_TOP2 elements
     Dim Elements2(E_MAX) As ELEMENT
 
-    Dim Page_No As Integer ' the page (tab) in CS2 with the layout. This value is encoded in the ID of the elements
+    Dim Page_No As Integer ' the page (tab) in CS2 or TC counting from 0 with the track diagram. This value is encoded in the ID of the elements
 
     Dim Developer_Environment As Boolean = False ' Is set to True in Form1_Load if we're running in the development environment
     Public CHANGED As Boolean, EDIT_CHANGES As Boolean
 
     Public env1 As New EnvironmentHandler3
 
-    ' The below is for drawing addresses and other text on the layout
-    Dim myGraphics As Graphics
+    ' The below is for drawing addresses and other text on the track diagram
     Dim Brush_black As Brush = New Drawing.SolidBrush(Color.Black)
     Dim Brush_blue As Brush = New Drawing.SolidBrush(Color.Blue)
     Dim Brush_red As Brush = New Drawing.SolidBrush(Color.Red)
@@ -116,6 +121,7 @@ Public Class Form1
     Dim drawFormatVertical = New StringFormat()
 
     Class RouteHandler
+        ' For analyzing routes in file fahrstrassen.cs2 if present
         Private Structure ROUTE_ELEMENT
             Dim param_id As String
             Dim param_value As String
@@ -742,6 +748,7 @@ MF_Write_Error:
     ReadOnly PFH As New PageFileHandler
 
     Private Sub AdjustPage()
+        Static not_first_call As Boolean = False
         Dim delta As Integer
         Dim W As Integer, H As Integer, H_eff As Integer
         delta = 9
@@ -801,6 +808,10 @@ MF_Write_Error:
         grpEditActions.Width = grpIcons.Width
         grpEditActions.Visible = (MODE = "Edit")
 
+        cmdAddressEdit.Width = grpEditActions.Width - 2 * cmdAddressEdit.Left
+        cmdTextEdit.Width = cmdAddressEdit.Width
+        btnDisplayRefreshEdit.Width = cmdAddressEdit.Width
+
         grpActions.Top = grpEditActions.Top + grpEditActions.Height
         grpActions.Height = 3 * cmdCommit.Height + 2 * delta
         grpActions.Left = lstProperties.Left
@@ -853,13 +864,9 @@ MF_Write_Error:
 
         lstRoutes.Left = lstProperties.Left
         lstRoutes.Top = lstInput.Top
-        lstRoutes.Height = lstInput.Height - cmdRevealAddressesRoute.Height - delta
+        lstRoutes.Height = lstInput.Height - delta
         lstRoutes.Width = lstProperties.Width
-        cmdRevealAddressesRoute.Width = lstRoutes.Width
-        cmdRevealAddressesRoute.Top = lstRoutes.Top + lstRoutes.Height + delta
-        cmdRevealAddressesRoute.Left = lstRoutes.Left
         lstRoutes.Visible = (MODE = "Routes")
-        cmdRevealAddressesRoute.Visible = (MODE = "Routes")
 
         lstMasterFile.Width = 1.5 * lstRoutes.Width ' only used for debugging. Not visible to user
         lstMasterFile.Width = 1.5 * lstRoutes.Width
@@ -875,7 +882,7 @@ MF_Write_Error:
         TurnOffDeveloperModeToolStripMenuItem.Visible = Developer_Environment
 
         grpLayoutPages.Visible = (MODE = "View") And FILE_LOADED And Not lstInput.Visible
-        If MODE = "View" Then
+        If MODE = "View" And Not not_first_call Then
             grpLayoutPages.Top = lstProperties.Top + lstProperties.Height
             grpLayoutPages.Left = lstProperties.Left
             grpLayoutPages.Width = lstProperties.Width
@@ -884,18 +891,22 @@ MF_Write_Error:
             lstLayoutPages.Height = 0.75 * lstProperties.Height
             lblLayoutPages.Top = lstLayoutPages.Top + lstLayoutPages.Height
             btnAddLayoutPage.Top = lblLayoutPages.Top + lblLayoutPages.Height
+            btnAddLayoutPage.Width = grpLayoutPages.Width - 2 * btnAddLayoutPage.Left
             btnDuplicatePage.Top = btnAddLayoutPage.Top + btnAddLayoutPage.Height
+            btnDuplicatePage.Width = btnAddLayoutPage.Width
             btnRenameLayoutPage.Top = btnDuplicatePage.Top + btnDuplicatePage.Height
+            btnRenameLayoutPage.Width = btnAddLayoutPage.Width
             btnRemoveLayoutPage.Top = btnRenameLayoutPage.Top + btnRenameLayoutPage.Height
-            cmdRevealAddressesPage.Top = grpLayoutPages.Height - cmdRevealAddressesPage.Height - delta
-            cmdRevealTextPage.Top = cmdRevealAddressesPage.Top
-            cmdRevealTextPage.Left = cmdRevealAddressesPage.Left + cmdRevealAddressesPage.Width
-            cmdDisplayRefresh.Top = cmdRevealAddressesPage.Top - cmdRevealAddressesPage.Height
-            cmdDisplayRefresh.Left = cmdRevealAddressesPage.Left
+            btnRemoveLayoutPage.Width = btnAddLayoutPage.Width
+            cmdRevealAddressesPage.Top = grpLayoutPages.Height - cmdRevealAddressesPage.Height - cmdRevealTextPage.Height - delta
+            cmdRevealAddressesPage.Width = btnAddLayoutPage.Width
+            cmdRevealTextPage.Top = cmdRevealAddressesPage.Top + cmdRevealAddressesPage.Height
+            cmdRevealTextPage.Left = cmdRevealAddressesPage.Left
+            cmdRevealTextPage.Width = cmdRevealAddressesPage.Width
         End If
 
         If Not STAND_ALONE Then VisibilitySetCommandlineMode(CMDLINE_MODE)
-
+        not_first_call = True
     End Sub
     Private Sub AxesDraw()
         lblC00.Text = Format(Col_Offset)
@@ -1534,25 +1545,6 @@ write_error:
         Dim i As Integer
         For i = 1 To E_TOP
             ElementDisplay(Elements(i))
-        Next i
-    End Sub
-
-    Private Sub GleisbildDisplayAddressesAndTexts()
-        Dim i As Integer
-        For i = 1 To E_TOP
-            ElementDisplayAddressAndText(Elements(i))
-        Next i
-    End Sub
-    Private Sub GleisbildDisplayAddresses()
-        Dim i As Integer
-        For i = 1 To E_TOP
-            ElementDisplayAddress(Elements(i))
-        Next i
-    End Sub
-    Private Sub GleisbildDisplayTexts()
-        Dim i As Integer
-        For i = 1 To E_TOP
-            ElementDisplayText(Elements(i))
         Next i
     End Sub
 
@@ -2362,158 +2354,240 @@ write_error:
         End If
     End Sub
 
-    Private Sub ElementDisplayAddressAndText(el As ELEMENT)
-        ' Display the address of the element. Display text (if any) of the element provided it has no address.
-        Dim element_type As String
-        If el.row_no > 255 Or el.col_no > 255 Then Exit Sub ' no action, element is outside of the visible grid
-        element_type = el.typ_s
-        If HasDigitalAddress(element_type) Then ' 231024
-            ElementDisplayAddress(el)
-        Else
-            ElementDisplayText(el)
-        End If
-    End Sub
-    Private Sub ElementDisplayAddress(el As ELEMENT)
+    Private Sub ElementDisplayAddress(el As ELEMENT, e As PaintEventArgs)
         ' Display the address of the element
-        Dim pic As Object, turn As Integer, element_name As String, da As String
+        Dim turn As Integer, element_name As String, da As String
         If el.row_no > 255 Or el.col_no > 255 Then Exit Sub ' no action, element is outside of the visible grid
         element_name = el.typ_s
         turn = el.drehung_i
         If HasDigitalAddress(element_name) Then
             da = DigitalAddress(el)
-            pic = PicGet(el.row_no, el.col_no) ' the cell where to display the text
             Select Case element_name
                 Case "signal", "signal_sh01", "signal_hp02", "signal_hp012", "signal_hp012s", "signal_p_hp012"
                     If turn = 0 Then
-                        TextDisplay(pic, da, Brush_red, 5, 17)
+                        StringDisplay(e, da, Brush_red, 5, 17)
                     ElseIf turn = 1 Then
-                        TextDisplayVertical(pic, da, Brush_red, 17, 5)
+                        StringDisplayVertical(e, da, Brush_red, 17, 5)
                     ElseIf turn = 2 Then
-                        TextDisplay(pic, da, Brush_red, 5, 0)
+                        StringDisplay(e, da, Brush_red, 5, 0)
                     Else
-                        TextDisplayVertical(pic, da, Brush_red, -2, 5)
+                        StringDisplayVertical(e, da, Brush_red, -2, 5)
                     End If
                 Case "andreaskreuz"
-                    TextDisplay(pic, da, Brush_black, 2, 13)
+                    StringDisplay(e, da, Brush_black, 2, 13)
                 Case "drehscheibe"
-                    TextDisplay(pic, da, Brush_yellow, 2, 15)
+                    StringDisplay(e, da, Brush_yellow, 2, 15)
                 Case "sonstige_gbs"
-                    TextDisplayVertical(pic, da, Brush_black, 17, 0)
+                    StringDisplayVertical(e, da, Brush_black, 17, 0)
                 Case "entkuppler", "entkuppler_1", "fahrstrasse", "pfeil"
                     If turn = 0 Then
-                        TextDisplay(pic, da, Brush_black, 5, 17)
+                        StringDisplay(e, da, Brush_black, 5, 17)
                     ElseIf turn = 1 Then
-                        TextDisplayVertical(pic, da, Brush_black, 17, 5)
+                        StringDisplayVertical(e, da, Brush_black, 17, 5)
                     ElseIf turn = 2 Then
-                        TextDisplay(pic, da, Brush_black, 5, 0)
+                        StringDisplay(e, da, Brush_black, 5, 0)
                     Else
-                        TextDisplayVertical(pic, da, Brush_black, -2, 5)
+                        StringDisplayVertical(e, da, Brush_black, -2, 5)
                     End If
                 Case "signal_f_hp01", "signal_f_hp012", "signal_f_hp012s", "signal_f_hp02"
                     If turn = 2 Then
-                        TextDisplayVertical(pic, da, Brush_red, 17, 5)
+                        StringDisplayVertical(e, da, Brush_red, 17, 5)
                     ElseIf turn = 3 Then
-                        TextDisplay(pic, da, Brush_red, 5, 0)
+                        StringDisplay(e, da, Brush_red, 5, 0)
                     ElseIf turn = 0 Then
-                        TextDisplayVertical(pic, da, Brush_red, -2, 5)
+                        StringDisplayVertical(e, da, Brush_red, -2, 5)
                     Else
-                        TextDisplay(pic, da, Brush_red, 5, 17)
+                        StringDisplay(e, da, Brush_red, 5, 17)
                     End If
                 Case "std_rot_gruen_0", "std_rot"
-                    TextDisplay(pic, da, Brush_black, 0, 0)
+                    StringDisplay(e, da, Brush_black, 0, 0)
                 Case "std_rot_gruen_1"
-                    TextDisplay(pic, da, Brush_black, 0, 17)
+                    StringDisplay(e, da, Brush_black, 0, 17)
                 Case "s88kontakt", "s88bogen", "s88doppelbogen", "bahnschranke"
                     If turn = 0 Then
-                        TextDisplay(pic, da, Brush_black, 0, 18)
+                        StringDisplay(e, da, Brush_black, 0, 18)
                     ElseIf turn = 2 Then
-                        TextDisplay(pic, da, Brush_black, 0, 0)
+                        StringDisplay(e, da, Brush_black, 0, 0)
                     ElseIf turn = 1 Then
-                        TextDisplayVertical(pic, da, Brush_black, 17, 0)
+                        StringDisplayVertical(e, da, Brush_black, 17, 0)
                     Else
-                        TextDisplayVertical(pic, da, Brush_black, -2, 0)
+                        StringDisplayVertical(e, da, Brush_black, -2, 0)
                     End If
                 Case "linksweiche"
                     If turn = 0 Then
-                        TextDisplayVertical(pic, da, Brush_blue, 17, 5)
+                        StringDisplayVertical(e, da, Brush_blue, 17, 5)
                     ElseIf turn = 1 Then
-                        TextDisplay(pic, da, Brush_blue, 5, 0)
+                        StringDisplay(e, da, Brush_blue, 5, 0)
                     ElseIf turn = 2 Then
-                        TextDisplayVertical(pic, da, Brush_blue, -2, 5)
+                        StringDisplayVertical(e, da, Brush_blue, -2, 5)
                     Else
-                        TextDisplay(pic, da, Brush_blue, 5, 17)
+                        StringDisplay(e, da, Brush_blue, 5, 17)
                     End If
                 Case "rechtsweiche"
                     If turn = 2 Then
-                        TextDisplayVertical(pic, da, Brush_blue, 17, 5)
+                        StringDisplayVertical(e, da, Brush_blue, 17, 5)
                     ElseIf turn = 3 Then
-                        TextDisplay(pic, da, Brush_blue, 5, 0)
+                        StringDisplay(e, da, Brush_blue, 5, 0)
                     ElseIf turn = 0 Then
-                        TextDisplayVertical(pic, da, Brush_blue, -2, 5)
+                        StringDisplayVertical(e, da, Brush_blue, -2, 5)
                     Else
-                        TextDisplay(pic, da, Brush_blue, 5, 17)
+                        StringDisplay(e, da, Brush_blue, 5, 17)
                     End If
                 Case "dreiwegweiche"
                     If turn = 3 Then
-                        TextDisplay(pic, da, Brush_red, 5, 17)
+                        StringDisplay(e, da, Brush_red, 5, 17)
                     ElseIf turn = 0 Then
-                        TextDisplayVertical(pic, da, Brush_red, 17, 5)
+                        StringDisplayVertical(e, da, Brush_red, 17, 5)
                     ElseIf turn = 1 Then
-                        TextDisplay(pic, da, Brush_red, 5, -2)
+                        StringDisplay(e, da, Brush_red, 5, -2)
                     Else
-                        TextDisplayVertical(pic, da, Brush_red, -2, 5)
+                        StringDisplayVertical(e, da, Brush_red, -2, 5)
                     End If
                 Case "yweiche"
                     If turn = 2 Then
-                        TextDisplay(pic, da, Brush_red, 5, 17)
+                        StringDisplay(e, da, Brush_red, 5, 17)
                     ElseIf turn = 3 Then
-                        TextDisplayVertical(pic, da, Brush_red, 17, 5)
+                        StringDisplayVertical(e, da, Brush_red, 17, 5)
                     ElseIf turn = 0 Then
-                        TextDisplay(pic, da, Brush_red, 5, 0)
+                        StringDisplay(e, da, Brush_red, 5, 0)
                     Else
-                        TextDisplayVertical(pic, da, Brush_red, -2, 5)
+                        StringDisplayVertical(e, da, Brush_red, -2, 5)
                     End If
                 Case "lampe", "lampe_ge", "lampe_rt", "lampe_gn", "lampe_bl"
-                    TextDisplay(pic, da, Brush_black, 5, 0)
+                    StringDisplay(e, da, Brush_black, 5, 0)
                 Case Else
                     If Developer_Environment Then Message("Address display not impelented for " & element_name)
             End Select
         End If
     End Sub
-    Private Sub ElementDisplayText(el As ELEMENT)
+    Private Sub ElementDisplayText(el As ELEMENT, e As PaintEventArgs)
         ' overlays the el.text on the element's icon
-        Dim pic As PictureBox
         If el.row_no > 255 Or el.col_no > 255 Then Exit Sub ' no action, element is outside of the visible grid
         If el.text <> "" Then ' 231024
-            pic = PicGet(el.row_no, el.col_no) ' the cell where to display the text
             If el.drehung_i = 0 Then
-                TextDisplay(pic, el.text, Brush_black, 0, 18)
+                StringDisplay(e, el.text, Brush_black, 0, 18)
             ElseIf el.drehung_i = 1 Then
-                TextDisplayVertical(pic, el.text, Brush_black, 17, 5)
+                StringDisplayVertical(e, el.text, Brush_black, 17, 5)
             Else
-                TextDisplay(pic, el.text, Brush_black, 0, 18) '231024
+                StringDisplay(e, el.text, Brush_black, 0, 18) '231024
             End If
         End If
     End Sub
 
-    Public Sub TextDisplay(picCell As PictureBox, msg As String, color As Brush, x_px As Integer, y_px As Integer)
-        If Not picCell Is Nothing Then
-            myGraphics = picCell.CreateGraphics
-            myGraphics.DrawString(msg, myFont, color, x_px, y_px)
-        Else
-            Message(1, "TextDisplay, msg=" & msg & ", picCell is nothing")
+    Private Sub TextOrAddressDisplay(sender As Object, e As PaintEventArgs) Handles pic0000.Paint, pic0001.Paint, pic0002.Paint, pic0003.Paint, pic0004.Paint, pic0005.Paint, pic0006.Paint, pic0007.Paint, pic0008.Paint, pic0009.Paint,
+                                                                                    pic0010.Paint, pic0011.Paint, pic0012.Paint, pic0013.Paint, pic0014.Paint, pic0015.Paint, pic0016.Paint, pic0017.Paint, pic0018.Paint, pic0019.Paint,
+                                                                                    pic0020.Paint, pic0021.Paint, pic0022.Paint, pic0023.Paint, pic0024.Paint, pic0025.Paint, pic0026.Paint, pic0027.Paint, pic0028.Paint, pic0029.Paint
+        TextOrAddressDisplayBody(sender, e)
+    End Sub
+    Private Sub TextOrAddressDisplay1(sender As Object, e As PaintEventArgs) Handles pic0100.Paint, pic0101.Paint, pic0102.Paint, pic0103.Paint, pic0104.Paint, pic0105.Paint, pic0106.Paint, pic0107.Paint, pic0108.Paint, pic0109.Paint,
+                                                                                    pic0110.Paint, pic0111.Paint, pic0112.Paint, pic0113.Paint, pic0114.Paint, pic0115.Paint, pic0116.Paint, pic0117.Paint, pic0118.Paint, pic0119.Paint,
+                                                                                    pic0120.Paint, pic0121.Paint, pic0122.Paint, pic0123.Paint, pic0124.Paint, pic0125.Paint, pic0126.Paint, pic0127.Paint, pic0128.Paint, pic0129.Paint
+        TextOrAddressDisplayBody(sender, e)
+    End Sub
+    Private Sub TextOrAddressDisplay2(sender As Object, e As PaintEventArgs) Handles pic0200.Paint, pic0201.Paint, pic0202.Paint, pic0203.Paint, pic0204.Paint, pic0205.Paint, pic0206.Paint, pic0207.Paint, pic0208.Paint, pic0209.Paint,
+                                                                                    pic0210.Paint, pic0211.Paint, pic0212.Paint, pic0213.Paint, pic0214.Paint, pic0215.Paint, pic0216.Paint, pic0217.Paint, pic0218.Paint, pic0219.Paint,
+                                                                                    pic0220.Paint, pic0221.Paint, pic0222.Paint, pic0223.Paint, pic0224.Paint, pic0225.Paint, pic0226.Paint, pic0227.Paint, pic0228.Paint, pic0229.Paint
+        TextOrAddressDisplayBody(sender, e)
+    End Sub
+    Private Sub TextOrAddressDisplay3(sender As Object, e As PaintEventArgs) Handles pic0300.Paint, pic0301.Paint, pic0302.Paint, pic0303.Paint, pic0304.Paint, pic0305.Paint, pic0306.Paint, pic0307.Paint, pic0308.Paint, pic0309.Paint,
+                                                                                    pic0310.Paint, pic0311.Paint, pic0312.Paint, pic0313.Paint, pic0314.Paint, pic0315.Paint, pic0316.Paint, pic0317.Paint, pic0318.Paint, pic0319.Paint,
+                                                                                    pic0320.Paint, pic0321.Paint, pic0322.Paint, pic0323.Paint, pic0324.Paint, pic0325.Paint, pic0326.Paint, pic0327.Paint, pic0328.Paint, pic0329.Paint
+        TextOrAddressDisplayBody(sender, e)
+    End Sub
+    Private Sub TextOrAddressDisplay4(sender As Object, e As PaintEventArgs) Handles pic0400.Paint, pic0401.Paint, pic0402.Paint, pic0403.Paint, pic0404.Paint, pic0405.Paint, pic0406.Paint, pic0407.Paint, pic0408.Paint, pic0409.Paint,
+                                                                                    pic0410.Paint, pic0411.Paint, pic0412.Paint, pic0413.Paint, pic0414.Paint, pic0415.Paint, pic0416.Paint, pic0417.Paint, pic0418.Paint, pic0419.Paint,
+                                                                                    pic0420.Paint, pic0421.Paint, pic0422.Paint, pic0423.Paint, pic0424.Paint, pic0425.Paint, pic0426.Paint, pic0427.Paint, pic0428.Paint, pic0429.Paint
+        TextOrAddressDisplayBody(sender, e)
+    End Sub
+    Private Sub TextOrAddressDisplay5(sender As Object, e As PaintEventArgs) Handles pic0500.Paint, pic0501.Paint, pic0502.Paint, pic0503.Paint, pic0504.Paint, pic0505.Paint, pic0506.Paint, pic0507.Paint, pic0508.Paint, pic0509.Paint,
+                                                                                    pic0510.Paint, pic0511.Paint, pic0512.Paint, pic0513.Paint, pic0514.Paint, pic0515.Paint, pic0516.Paint, pic0517.Paint, pic0518.Paint, pic0519.Paint,
+                                                                                    pic0520.Paint, pic0521.Paint, pic0522.Paint, pic0523.Paint, pic0524.Paint, pic0525.Paint, pic0526.Paint, pic0527.Paint, pic0528.Paint, pic0529.Paint
+        TextOrAddressDisplayBody(sender, e)
+    End Sub
+    Private Sub TextOrAddressDisplay6(sender As Object, e As PaintEventArgs) Handles pic0600.Paint, pic0601.Paint, pic0602.Paint, pic0603.Paint, pic0604.Paint, pic0605.Paint, pic0606.Paint, pic0607.Paint, pic0608.Paint, pic0609.Paint,
+                                                                                    pic0610.Paint, pic0611.Paint, pic0612.Paint, pic0613.Paint, pic0614.Paint, pic0615.Paint, pic0616.Paint, pic0617.Paint, pic0618.Paint, pic0619.Paint,
+                                                                                    pic0620.Paint, pic0621.Paint, pic0622.Paint, pic0623.Paint, pic0624.Paint, pic0625.Paint, pic0626.Paint, pic0627.Paint, pic0628.Paint, pic0629.Paint
+        TextOrAddressDisplayBody(sender, e)
+    End Sub
+    Private Sub TextOrAddressDisplay7(sender As Object, e As PaintEventArgs) Handles pic0700.Paint, pic0701.Paint, pic0702.Paint, pic0703.Paint, pic0704.Paint, pic0705.Paint, pic0706.Paint, pic0707.Paint, pic0708.Paint, pic0709.Paint,
+                                                                                    pic0710.Paint, pic0711.Paint, pic0712.Paint, pic0713.Paint, pic0714.Paint, pic0715.Paint, pic0716.Paint, pic0717.Paint, pic0718.Paint, pic0719.Paint,
+                                                                                    pic0720.Paint, pic0721.Paint, pic0722.Paint, pic0723.Paint, pic0724.Paint, pic0725.Paint, pic0726.Paint, pic0727.Paint, pic0728.Paint, pic0729.Paint
+        TextOrAddressDisplayBody(sender, e)
+    End Sub
+    Private Sub TextOrAddressDisplay8(sender As Object, e As PaintEventArgs) Handles pic0800.Paint, pic0801.Paint, pic0802.Paint, pic0803.Paint, pic0804.Paint, pic0805.Paint, pic0806.Paint, pic0807.Paint, pic0808.Paint, pic0809.Paint,
+                                                                                    pic0810.Paint, pic0811.Paint, pic0812.Paint, pic0813.Paint, pic0814.Paint, pic0815.Paint, pic0816.Paint, pic0817.Paint, pic0818.Paint, pic0819.Paint,
+                                                                                    pic0820.Paint, pic0821.Paint, pic0822.Paint, pic0823.Paint, pic0824.Paint, pic0825.Paint, pic0826.Paint, pic0827.Paint, pic0828.Paint, pic0829.Paint
+        TextOrAddressDisplayBody(sender, e)
+    End Sub
+    Private Sub TextOrAddressDisplay9(sender As Object, e As PaintEventArgs) Handles pic0900.Paint, pic0901.Paint, pic0902.Paint, pic0903.Paint, pic0904.Paint, pic0905.Paint, pic0906.Paint, pic0907.Paint, pic0908.Paint, pic0909.Paint,
+                                                                                    pic0910.Paint, pic0911.Paint, pic0912.Paint, pic0913.Paint, pic0914.Paint, pic0915.Paint, pic0916.Paint, pic0917.Paint, pic0918.Paint, pic0919.Paint,
+                                                                                    pic0920.Paint, pic0921.Paint, pic0922.Paint, pic0923.Paint, pic0924.Paint, pic0925.Paint, pic0926.Paint, pic0927.Paint, pic0928.Paint, pic0929.Paint
+        TextOrAddressDisplayBody(sender, e)
+    End Sub
+    Private Sub TextOrAddressDisplay10(sender As Object, e As PaintEventArgs) Handles pic1000.Paint, pic1001.Paint, pic1002.Paint, pic1003.Paint, pic1004.Paint, pic1005.Paint, pic1006.Paint, pic1007.Paint, pic1008.Paint, pic1009.Paint,
+                                                                                    pic1010.Paint, pic1011.Paint, pic1012.Paint, pic1013.Paint, pic1014.Paint, pic1015.Paint, pic1016.Paint, pic1017.Paint, pic1018.Paint, pic1019.Paint,
+                                                                                    pic1020.Paint, pic1021.Paint, pic1022.Paint, pic1023.Paint, pic1024.Paint, pic1025.Paint, pic1026.Paint, pic1027.Paint, pic1028.Paint, pic1029.Paint
+        TextOrAddressDisplayBody(sender, e)
+    End Sub
+    Private Sub TextOrAddressDisplay11(sender As Object, e As PaintEventArgs) Handles pic1100.Paint, pic1101.Paint, pic1102.Paint, pic1103.Paint, pic1104.Paint, pic1105.Paint, pic1106.Paint, pic1107.Paint, pic1108.Paint, pic1109.Paint,
+                                                                                    pic1110.Paint, pic1111.Paint, pic1112.Paint, pic1113.Paint, pic1114.Paint, pic1115.Paint, pic1116.Paint, pic1117.Paint, pic1118.Paint, pic1119.Paint,
+                                                                                    pic1120.Paint, pic1121.Paint, pic1122.Paint, pic1123.Paint, pic1124.Paint, pic1125.Paint, pic1126.Paint, pic1127.Paint, pic1128.Paint, pic1129.Paint
+        TextOrAddressDisplayBody(sender, e)
+    End Sub
+    Private Sub TextOrAddressDisplay12(sender As Object, e As PaintEventArgs) Handles pic1200.Paint, pic1201.Paint, pic1202.Paint, pic1203.Paint, pic1204.Paint, pic1205.Paint, pic1206.Paint, pic1207.Paint, pic1208.Paint, pic1209.Paint,
+                                                                                    pic1210.Paint, pic1211.Paint, pic1212.Paint, pic1213.Paint, pic1214.Paint, pic1215.Paint, pic1216.Paint, pic1217.Paint, pic1218.Paint, pic1219.Paint,
+                                                                                    pic1220.Paint, pic1221.Paint, pic1222.Paint, pic1223.Paint, pic1224.Paint, pic1225.Paint, pic1226.Paint, pic1227.Paint, pic1228.Paint, pic1229.Paint
+        TextOrAddressDisplayBody(sender, e)
+    End Sub
+    Private Sub TextOrAddressDisplay13(sender As Object, e As PaintEventArgs) Handles pic1300.Paint, pic1301.Paint, pic1302.Paint, pic1303.Paint, pic1304.Paint, pic1305.Paint, pic1306.Paint, pic1307.Paint, pic1308.Paint, pic1309.Paint,
+                                                                                    pic1310.Paint, pic1311.Paint, pic1312.Paint, pic1313.Paint, pic1314.Paint, pic1315.Paint, pic1316.Paint, pic1317.Paint, pic1318.Paint, pic1319.Paint,
+                                                                                    pic1320.Paint, pic1321.Paint, pic1322.Paint, pic1323.Paint, pic1324.Paint, pic1325.Paint, pic1326.Paint, pic1327.Paint, pic1328.Paint, pic1329.Paint
+        TextOrAddressDisplayBody(sender, e)
+    End Sub
+    Private Sub TextOrAddressDisplay14(sender As Object, e As PaintEventArgs) Handles pic1400.Paint, pic1401.Paint, pic1402.Paint, pic1403.Paint, pic1404.Paint, pic1405.Paint, pic1406.Paint, pic1407.Paint, pic1408.Paint, pic1409.Paint,
+                                                                                    pic1410.Paint, pic1411.Paint, pic1412.Paint, pic1413.Paint, pic1414.Paint, pic1415.Paint, pic1416.Paint, pic1417.Paint, pic1418.Paint, pic1419.Paint,
+                                                                                    pic1420.Paint, pic1421.Paint, pic1422.Paint, pic1423.Paint, pic1424.Paint, pic1425.Paint, pic1426.Paint, pic1427.Paint, pic1428.Paint, pic1429.Paint
+        TextOrAddressDisplayBody(sender, e)
+    End Sub
+    Private Sub TextOrAddressDisplay15(sender As Object, e As PaintEventArgs) Handles pic1500.Paint, pic1501.Paint, pic1502.Paint, pic1503.Paint, pic1504.Paint, pic1505.Paint, pic1506.Paint, pic1507.Paint, pic1508.Paint, pic1509.Paint,
+                                                                                    pic1510.Paint, pic1511.Paint, pic1512.Paint, pic1513.Paint, pic1514.Paint, pic1515.Paint, pic1516.Paint, pic1517.Paint, pic1518.Paint, pic1519.Paint,
+                                                                                    pic1520.Paint, pic1521.Paint, pic1522.Paint, pic1523.Paint, pic1524.Paint, pic1525.Paint, pic1526.Paint, pic1527.Paint, pic1528.Paint, pic1529.Paint
+        TextOrAddressDisplayBody(sender, e)
+    End Sub
+    Private Sub TextOrAddressDisplay16(sender As Object, e As PaintEventArgs) Handles pic1600.Paint, pic1601.Paint, pic1602.Paint, pic1603.Paint, pic1604.Paint, pic1605.Paint, pic1606.Paint, pic1607.Paint, pic1608.Paint, pic1609.Paint,
+                                                                                    pic1610.Paint, pic1611.Paint, pic1612.Paint, pic1613.Paint, pic1614.Paint, pic1615.Paint, pic1616.Paint, pic1617.Paint, pic1618.Paint, pic1619.Paint,
+                                                                                    pic1620.Paint, pic1621.Paint, pic1622.Paint, pic1623.Paint, pic1624.Paint, pic1625.Paint, pic1626.Paint, pic1627.Paint, pic1628.Paint, pic1629.Paint
+        TextOrAddressDisplayBody(sender, e)
+    End Sub
+
+    Private Sub TextOrAddressDisplayBody(sender As Object, e As PaintEventArgs)
+        Dim picName As String = sender.name
+        Dim el As ELEMENT
+        If FILE_LOADED Then
+            If Reveal_Addr Then
+                el = ElementGet(Mid(picName, 4, 4))
+                If el.id = "" Then Exit Sub ' empty element
+                ElementDisplayAddress(el, e)
+            End If
+            If Reveal_Text Then
+                el = ElementGet(Mid(picName, 4, 4))
+                If el.text = "" Then Exit Sub ' no text (or empty element)
+                ElementDisplayText(el, e)
+            End If
         End If
     End Sub
 
-    Public Sub TextDisplayVertical(picCell As Object, msg As String, color As Brush, x_px As Integer, y_px As Integer)
-        If Not picCell Is Nothing Then
-            myGraphics = picCell.CreateGraphics
-            myGraphics.DrawString(msg, myFont, color, x_px, y_px, drawFormatVertical)
-        Else
-            Message(1, "TextDisplayVertical, msg=" & msg & ", picCell is nothing")
+    Public Sub StringDisplay(e As PaintEventArgs, msg As String, color As Brush, x_px As Integer, y_px As Integer)
+        If e IsNot Nothing Then
+            e.Graphics.DrawString(msg, myFont, color, x_px, y_px)
         End If
     End Sub
 
+    Public Sub StringDisplayVertical(e As PaintEventArgs, msg As String, color As Brush, x_px As Integer, y_px As Integer)
+        If e IsNot Nothing Then
+            e.Graphics.DrawString(msg, myFont, color, x_px, y_px, drawFormatVertical)
+        End If
+    End Sub
     Private Function Translate(element_name As String) As String
         ' Translates the German names to English (solely for display purposes if selected in the tools menu)
         If Not Use_English_Terms Then
@@ -3369,7 +3443,7 @@ write_error:
                     Message(1, Translate(el.typ_s) & " (" & Format(el.row_no) & "," & Format(el.col_no) & ")")
                 End If
             End If
-        ElseIf Active_Tool <> "" Then ' MODE = "Edit"
+        ElseIf Active_Tool <> "" Then ' MODE is "Edit"
             Select Case Active_Tool
                 Case "edit_address" : If HasDigitalAddress(el.typ_s) Then
                         el.artikel_i = DigitalArtikelPrompt(el)
@@ -3377,7 +3451,9 @@ write_error:
                             el.deviceId_s = DeviceIdPrompt(el.deviceId_s)
                         End If
                         Elements(el.my_index) = el
-                        Call cmdAddressEdit_Click(s, e) ' 231024
+                        Reveal_Addr = True ' to counter that the user may have turned it off
+                        Reveal_Text = False
+                        ElementDisplay(el)
                         EDIT_CHANGES = True
                     End If
                 Case "edit_text" : If el.text <> "" And el.typ_s = "" Then
@@ -3385,15 +3461,17 @@ write_error:
                         el.text = RTrim(InputBox("Enter text", "Text", el.text)) ' 231022 Trim() replaced with RTrim
                         If el.text = "" Then el.text = s ' text cannot be left blank in a text elment due to Märklin's convention of leaving the type designation blank
                         Elements(el.my_index) = el
-                        '     ElementDisplay(el) ' 231024 has no effect
-                        Call cmdTextEdit_Click(s, e) ' 231024 
+                        Reveal_Text = True ' to counter that the user may have turned it off
+                        Reveal_Addr = False
+                        ElementDisplay(el)
                         EDIT_CHANGES = True
                     ElseIf el.typ_s <> "" Then ' allow for text in non-text objects - like CS2 allows for
                         s = el.text
                         el.text = RTrim(InputBox("Enter text", "Text", el.text)) ' 231022 Trim() replaced with RTrim
                         Elements(el.my_index) = el
-                        '    ElementDisplay(el) ' 231024 has no effect
-                        Call cmdTextEdit_Click(s, e) ' 231024 
+                        Reveal_Text = True ' to counter that the user may have turned it off
+                        Reveal_Addr = False
+                        ElementDisplay(el)
                         EDIT_CHANGES = True
                     End If
                 Case "empty" : ElementRemove(el.my_index)
@@ -3410,7 +3488,6 @@ write_error:
                         End If
                         Elements(el.my_index) = el
                         EDIT_CHANGES = True
-                        GleisBildDisplayClear()
                         GleisbildDisplay()
                         If Test_Level > 1 Then Message("drehung now=" & Format(el.drehung_i))
                     End If
@@ -3458,6 +3535,8 @@ write_error:
                     Else
                         Message(2, "New element in (row,col)=(" & Format(el_new.row_no) & "," & Format(el_new.col_no) & "): " & el_new.typ_s & ", artikel=" & Format(el_new.artikel_i) & ", drehung=" & Format(el_new.drehung_i))
                     End If
+                    Reveal_Addr = (el_new.text = "")
+                    Reveal_Text = Not Reveal_Addr
                     ElementDisplay(el_new)
             End Select
         End If
@@ -3486,6 +3565,8 @@ write_error:
             MODE = "Edit"
             Message(1, "Mode: Edit Track Diagram")
             cmdCancel.Text = "Cancel"
+            Reveal_Addr_State = Reveal_Addr
+            Reveal_Text_State = Reveal_Text
             FileToolStripMenuItem.Enabled = False
             ToolsToolStripMenuItem.Enabled = False
             QuitToolStripMenuItem.Enabled = False
@@ -3503,7 +3584,11 @@ write_error:
                 MODE = "Routes"
                 Message(1, "Mode: View Routes")
                 cmdCancel.Text = "Back"
-                'FileToolStripMenuItem.Enabled = False
+                Reveal_Addr_State = Reveal_Addr
+                Reveal_Text_State = Reveal_Text
+                Reveal_Addr = True
+                Reveal_Text = False
+
                 NewLayoutToolStripMenuItem.Enabled = False
                 ReopenLastToolStripMenuItem.Enabled = False
                 SaveToolStripMenuItem.Enabled = False
@@ -3511,6 +3596,7 @@ write_error:
                 ToolsToolStripMenuItem.Enabled = False
 
                 AdjustPage()
+                GleisbildDisplay()
                 Message("Select a route in the drop-down upper right corner or click a route in the track diagram")
             End If
         Else
@@ -3526,6 +3612,11 @@ write_error:
 
         If Not STAND_ALONE And Not (MODE = "Routes") Then CloseShop()
         grpMoveWindow.Enabled = True
+
+        If MODE = "Routes" Or MODE = "Edit" Then
+            Reveal_Addr = Reveal_Addr_State
+            Reveal_Text = Reveal_Text_State
+        End If
 
         MODE = "View"
         Message(1, "Mode: View/Manage Pages")
@@ -3566,6 +3657,8 @@ write_error:
         EDIT_CHANGES = False
         Active_Tool = ""
         If STAND_ALONE Then
+            Reveal_Addr = Reveal_Addr_State
+            Reveal_Text = Reveal_Text_State
             AdjustPage()
             GleisbildGridSet(False)
             GleisBildDisplayClear()
@@ -5737,13 +5830,17 @@ write_error:
     Private Sub cmdAddressEdit_Click(sender As Object, e As EventArgs) Handles cmdAddressEdit.Click
         Active_Tool = "edit_address"
         Message("Active tool: " & Active_Tool)
-        GleisbildDisplayAddresses()
+        Reveal_Addr = True
+        Reveal_Text = False
+        GleisbildDisplay()
     End Sub
 
     Private Sub cmdTextEdit_Click(sender As Object, e As EventArgs) Handles cmdTextEdit.Click
         Active_Tool = "edit_text"
         Message("Active tool: " & Active_Tool)
-        GleisbildDisplayTexts()
+        Reveal_Addr = False
+        Reveal_Text = True
+        GleisbildDisplay()
     End Sub
 
     Private Sub cmdSplitHorizontally_Click_1(sender As Object, e As EventArgs) Handles cmdSplitHorizontally.Click
@@ -5827,7 +5924,6 @@ write_error:
         AdjustPage()
     End Sub
 
-
     Private Sub cboRouteNames_SelectedIndexChanged(sender As Object, e As EventArgs) Handles cboRouteNames.SelectedIndexChanged
         RH.RouteShow(cboRouteNames.SelectedItem)
     End Sub
@@ -5860,7 +5956,7 @@ write_error:
     End Sub
     Private Sub HowToUseToolStripMenuItem_Click(sender As Object, e As EventArgs) Handles HowToUseToolStripMenuItem.Click
         ' To simplify installation the help file has been built into the source text
-        Const s_top = 69
+        Const s_top = 64
         Static been_here As Boolean
         Static s(s_top) As String
         frmHelp.HelpWindowSetPos(Me.Left, Me.Top + 30, grpLayout.Width, grpLayout.Height)
@@ -5870,14 +5966,14 @@ write_error:
             s(1) = "Track Diagram Editor " & Version
             s(2) = ""
             s(3) = "A track layout spans one or more pages with track diagrams."
-            s(4) = "Each page (tab In CS2) corresponds to a unique track diagram file."
+            s(4) = "Each page (tab in CS2 or TC) corresponds to a unique track diagram file."
             s(5) = ""
-            s(6) = "Track diagram files can be created by a CS2 or by this program."
+            s(6) = "Track diagram files can be created by a CS2 or by this editor."
             s(7) = ""
-            s(8) = "The mapping of track diagram files to pages Of the track layout is created by the CS2 or by this "
-            s(9) = "track diagram editor. Said mapping (""layout map"") Is stored in a file called gleisbild.cs2. "
+            s(8) = "The mapping of track diagram files to pages of the track layout is created by the CS2 or by this "
+            s(9) = "track diagram editor. Said mapping (""layout map"") Is stored in a file called gleisbild.cs2."
             s(10) = ""
-            s(11) = "Märklin CS2's convention regarding folder structure (this structure is also required by the Track Control program):"
+            s(11) = "Märklin CS2's convention regarding folder structure (this structure is also required by the Track Control program ""TC""):"
             s(12) = "  <my_path>\config\gleisbilder\<track diagram name>.cs2   -- One or more track diagram files, each assigned to a tab"
             s(13) = "                                                             in CS2's layout display"
             s(14) = "  <my_path>\config\gleisbild.cs2                          -- This file constitues an index to the pages (CS2 tabs)"
@@ -5891,78 +5987,71 @@ write_error:
             s(22) = "Nevertheless, we have included a few explicit operations on the map, refer 'Page Management Actions' below."
             s(23) = ""
             s(24) = "The Layout editor handles the above Structure. However, should the track diagrams not reside in a folder named"
-            s(25) = """gleisbilder"" this can be handled to a limited extent (""flat Structure""): fahrstrassen.cs2 should reside in the"
-            s(26) = "same folder As the track diagrams and pages cannot be managed."
+            s(25) = """gleisbilder"" this can be handled to a limited extent (""flat Structure""): In this case fahrstrassen.cs2 should reside"
+            s(26) = "in the same folder As the track diagrams and pages cannot be managed."
             s(27) = ""
             s(28) = "Ttack diagram files must have the file type .cs2."
             s(29) = ""
             s(30) = "Track diagram creation and editing"
             s(31) = "----------------------------------"
-            s(32) = " - Menu File-New lets you create a new track diagram file. It will be added to the layout map as a New page."
-            s(33) = "   If no layout map exists, one will be created."
-            s(34) = ""
-            s(35) = " - Menu File-Load lets you load And edit a previously created track diagram or a track diagram copied over from a"
-            s(36) = "   CS2"
-            s(37) = ""
-            s(38) = " - Menu File-Save saves your changes to the track diagram."
-            s(39) = ""
-            s(40) = " - Menu File-Save As lets you save your track diagram under a new name. Note that this new track diagram will not"
-            s(41) = "   be assigned a page and it will not automatically be included in the layout map. You can manually assign it "
-            s(42) = "   to a page later, cf. below. "
+            s(32) = " - Menu ""File-New Layout..."" lets you create a new layout consisting of one or more pages of track diagram files."
+            s(33) = ""
+            s(34) = " - Menu ""File-Open..."" lets you open And edit a previously created track diagram or a track diagram copied over from a"
+            s(35) = "   CS2. This option can handle track diagrams which are not assigned to a page of a layout (""flat structure"")"
+            s(36) = ""
+            s(37) = " - Menu ""File-Save"" saves your changes to the track diagram."
+            s(38) = ""
+            s(39) = " - Menu ""File-Save a Copy as..."" lets you save your track diagram under a new name. Note that this new track diagram will not"
+            s(40) = "   be assigned a page and it will not automatically be included in the layout map. You can manually assign it "
+            s(41) = "   to a page later, cf. ""Add Page"" below."
+            s(42) = ""
             s(43) = ""
-            s(44) = "Page Management Actions (click button [Manage Pages] to access these actions)"
-            s(45) = "-----------------------------------------------------------------------------"
+            s(44) = "Page Management Actions (refer the buttons in the right hand pane)"
+            s(45) = "------------------------------------------------------------------"
             s(46) = " - Add Page"
-            s(47) = "   - Adds the currently displayed track diagram to a new page in the layout map. The updated layout map file"
-            s(48) = "     is saved to disk."
-            s(49) = "     Note:  This action Is only necessary if you want to assign an existing (individual) track diagram file to a page."
-            s(50) = "	  To create a new track diagram and have it assigned to a page, simply use the menu action File-New, which will"
-            s(51) = "	  manage the layout map for you."
-            s(52) = ""
-            s(53) = " - Assign Track Diagram to a Page"
-            s(54) = "   - Replaces the track diagram assigned to a page (tab) with the diagram currently being displayed"
-            s(55) = ""
-            s(56) = " - Rename Page"
-            s(57) = "   - Renames the page and the corresponding track diagram file"
-            s(58) = ""
-            s(59) = " - Remove Last Page"
-            s(60) = "   - Removes the last page from the layout map. The corresponding track diagram file Is not deleted from the disk."
-            s(61) = "     The updated layout map file is saved to disk right away."
-            s(62) = ""
-            s(63) = "Backup file"
-            s(64) = "-----------"
-            s(65) = "When a layout is opened, a copy of the layout file Is saved in a subfolder ""Backup"" with the file extension ""qs2""."
-            s(66) = ""
-            s(67) = "Installation"
-            s(68) = "-----------"
-            s(69) = "The installation makes no changes to your Windows system Or registry."
+            s(47) = "   This action has two options:"
+            s(48) = "   1 Adds a new page so that you can create a track diagram from scratch."
+            s(49) = "   2 Adds a new page and allows you to import an existing track diagram file into the new page."
+            s(50) = ""
+            s(51) = " - Duplicate Page"
+            s(52) = "   Creates a new page with a copy of the current track diagram"
+            s(53) = ""
+            s(54) = " - Rename Page"
+            s(55) = "   - Renames the page and the corresponding track diagram file"
+            s(56) = ""
+            s(57) = " - Remove Page"
+            s(58) = "   - Removes the selected page from the layout. The corresponding track diagram file is not deleted from disk, but"
+            s(59) = "     moved to the backup folder."
+            s(60) = ""
+            s(61) = "Installation"
+            s(62) = "------------"
+            s(63) = "The installation makes no changes to your Windows system or registry."
+            s(64) = "No installation is necessary when the editor is activated from the train contral program ""TC""."
             been_here = True
         End If
         frmHelp.HelpDisplay(s, s_top)
     End Sub
     Private Sub LimitationsToolStripMenuItem_Click(sender As Object, e As EventArgs) Handles LimitationsToolStripMenuItem.Click
         ' To simplify installation the help file has been built into the source text
-        Const s_top = 16
+        Const s_top = 14
         Static been_here As Boolean
         Static s(s_top) As String
         frmHelp.HelpWindowSetPos(Me.Left, Me.Top + 30, grpLayout.Width, grpLayout.Height)
         If Not been_here Then
             s(1) = "Limitations in " & Version
             s(2) = ""
-            s(3) = "A Layout cannot exceed 30 columns And 17 rows."
+            s(3) = "All lamps are displayed in yellow."
             s(4) = ""
-            s(5) = "All lamps are displayed in yellow."
+            s(5) = """entkuppler_1"" Is handled Like ""entkuppler""."
             s(6) = ""
-            s(7) = """entkuppler_1"" Is handled Like ""entkuppler""."
-            s(8) = ""
-            s(9) = "ELEMENT Type ""sonstige_gbs"" is displayed as a question mark and"
-            s(10) = "new elements cannot be inserted. The address Of existing elements can be changed,"
-            s(11) = "however."
+            s(7) = "ELEMENT Type ""sonstige_gbs"" is displayed as a question mark and"
+            s(8) = "new elements cannot be inserted. The address of existing elements can be changed,"
+            s(9) = "however."
+            s(10) = ""
+            s(11) = "New instances of ""std_rot"" cannot be created. Use ""std_rot_gruen_0"" instead."
             s(12) = ""
-            s(13) = "New instances of ""std_rot"" cannot be created. Use ""std_rot_gruen_0"" instead."
-            s(14) = ""
-            s(15) = "It is not understood how to derive the s88 deviceid from the artikel number."
-            s(16) = "For now the user Is prompted For the appropriate hex string."
+            s(13) = "It is not understood how to derive the s88 deviceid from the artikel number."
+            s(14) = "For now the user will be prompted for the appropriate hex string."
             been_here = True
         End If
         frmHelp.HelpDisplay(s, s_top)
@@ -5975,1551 +6064,93 @@ write_error:
         ShowInputFileToolStripMenuItem.Visible = Developer_Environment Or Verbose
     End Sub
 
-    Private Sub cmdRevealAddresses_Click(sender As Object, e As EventArgs)
-        GleisbildDisplayAddressesAndTexts()
-    End Sub
-
-    Private Sub pic0000_MouseHover(sender As Object, e As EventArgs) Handles pic0000.MouseHover
+    Private Sub pic0000_MouseHover(sender As Object, e As EventArgs) Handles pic0000.MouseHover, pic0001.MouseHover, pic0002.MouseHover, pic0003.MouseHover, pic0004.MouseHover, pic0005.MouseHover, pic0006.MouseHover, pic0007.MouseHover, pic0008.MouseHover, pic0009.MouseHover,
+            pic0010.MouseHover, pic0011.MouseHover, pic0012.MouseHover, pic0013.MouseHover, pic0014.MouseHover, pic0015.MouseHover, pic0016.MouseHover, pic0017.MouseHover, pic0018.MouseHover, pic0019.MouseHover,
+            pic0020.MouseHover, pic0021.MouseHover, pic0022.MouseHover, pic0023.MouseHover, pic0024.MouseHover, pic0025.MouseHover, pic0026.MouseHover, pic0027.MouseHover, pic0028.MouseHover, pic0029.MouseHover
         picHover(sender)
     End Sub
 
-    Private Sub pic0001_MouseHover(sender As Object, e As EventArgs) Handles pic0001.MouseHover
+    Private Sub pic0100_MouseHover(sender As Object, e As EventArgs) Handles pic0100.MouseHover, pic0101.MouseHover, pic0102.MouseHover, pic0103.MouseHover, pic0104.MouseHover, pic0105.MouseHover, pic0106.MouseHover, pic0107.MouseHover, pic0108.MouseHover, pic0109.MouseHover,
+            pic0110.MouseHover, pic0111.MouseHover, pic0112.MouseHover, pic0113.MouseHover, pic0114.MouseHover, pic0115.MouseHover, pic0116.MouseHover, pic0117.MouseHover, pic0118.MouseHover, pic0119.MouseHover,
+            pic0120.MouseHover, pic0121.MouseHover, pic0122.MouseHover, pic0123.MouseHover, pic0124.MouseHover, pic0125.MouseHover, pic0126.MouseHover, pic0127.MouseHover, pic0128.MouseHover, pic0129.MouseHover
+        picHover(sender)
+    End Sub
+    Private Sub pic0200_MouseHover(sender As Object, e As EventArgs) Handles pic0200.MouseHover, pic0201.MouseHover, pic0202.MouseHover, pic0203.MouseHover, pic0204.MouseHover, pic0205.MouseHover, pic0206.MouseHover, pic0207.MouseHover, pic0208.MouseHover, pic0209.MouseHover,
+            pic0210.MouseHover, pic0211.MouseHover, pic0212.MouseHover, pic0213.MouseHover, pic0214.MouseHover, pic0215.MouseHover, pic0216.MouseHover, pic0217.MouseHover, pic0218.MouseHover, pic0219.MouseHover,
+            pic0220.MouseHover, pic0221.MouseHover, pic0222.MouseHover, pic0223.MouseHover, pic0224.MouseHover, pic0225.MouseHover, pic0226.MouseHover, pic0227.MouseHover, pic0228.MouseHover, pic0229.MouseHover
+        picHover(sender)
+    End Sub
+    Private Sub pic0300_MouseHover(sender As Object, e As EventArgs) Handles pic0300.MouseHover, pic0301.MouseHover, pic0302.MouseHover, pic0303.MouseHover, pic0304.MouseHover, pic0305.MouseHover, pic0306.MouseHover, pic0307.MouseHover, pic0308.MouseHover, pic0309.MouseHover,
+            pic0310.MouseHover, pic0311.MouseHover, pic0312.MouseHover, pic0313.MouseHover, pic0314.MouseHover, pic0315.MouseHover, pic0316.MouseHover, pic0317.MouseHover, pic0318.MouseHover, pic0319.MouseHover,
+            pic0320.MouseHover, pic0321.MouseHover, pic0322.MouseHover, pic0323.MouseHover, pic0324.MouseHover, pic0325.MouseHover, pic0326.MouseHover, pic0327.MouseHover, pic0328.MouseHover, pic0329.MouseHover
+        picHover(sender)
+    End Sub
+    Private Sub pic0400_MouseHover(sender As Object, e As EventArgs) Handles pic0400.MouseHover, pic0401.MouseHover, pic0402.MouseHover, pic0403.MouseHover, pic0404.MouseHover, pic0405.MouseHover, pic0406.MouseHover, pic0407.MouseHover, pic0408.MouseHover, pic0409.MouseHover,
+            pic0410.MouseHover, pic0411.MouseHover, pic0412.MouseHover, pic0413.MouseHover, pic0414.MouseHover, pic0415.MouseHover, pic0416.MouseHover, pic0417.MouseHover, pic0418.MouseHover, pic0419.MouseHover,
+            pic0420.MouseHover, pic0421.MouseHover, pic0422.MouseHover, pic0423.MouseHover, pic0424.MouseHover, pic0425.MouseHover, pic0426.MouseHover, pic0427.MouseHover, pic0428.MouseHover, pic0429.MouseHover
+        picHover(sender)
+    End Sub
+    Private Sub pic0500_MouseHover(sender As Object, e As EventArgs) Handles pic0500.MouseHover, pic0501.MouseHover, pic0502.MouseHover, pic0503.MouseHover, pic0504.MouseHover, pic0505.MouseHover, pic0506.MouseHover, pic0507.MouseHover, pic0508.MouseHover, pic0509.MouseHover,
+            pic0510.MouseHover, pic0511.MouseHover, pic0512.MouseHover, pic0513.MouseHover, pic0514.MouseHover, pic0515.MouseHover, pic0516.MouseHover, pic0517.MouseHover, pic0518.MouseHover, pic0519.MouseHover,
+            pic0520.MouseHover, pic0521.MouseHover, pic0522.MouseHover, pic0523.MouseHover, pic0524.MouseHover, pic0525.MouseHover, pic0526.MouseHover, pic0527.MouseHover, pic0528.MouseHover, pic0529.MouseHover
+        picHover(sender)
+    End Sub
+    Private Sub pic0600_MouseHover(sender As Object, e As EventArgs) Handles pic0600.MouseHover, pic0601.MouseHover, pic0602.MouseHover, pic0603.MouseHover, pic0604.MouseHover, pic0605.MouseHover, pic0606.MouseHover, pic0607.MouseHover, pic0608.MouseHover, pic0609.MouseHover,
+            pic0610.MouseHover, pic0611.MouseHover, pic0612.MouseHover, pic0613.MouseHover, pic0614.MouseHover, pic0615.MouseHover, pic0616.MouseHover, pic0617.MouseHover, pic0618.MouseHover, pic0619.MouseHover,
+            pic0620.MouseHover, pic0621.MouseHover, pic0622.MouseHover, pic0623.MouseHover, pic0624.MouseHover, pic0625.MouseHover, pic0626.MouseHover, pic0627.MouseHover, pic0628.MouseHover, pic0629.MouseHover
+        picHover(sender)
+    End Sub
+    Private Sub pic0700_MouseHover(sender As Object, e As EventArgs) Handles pic0700.MouseHover, pic0701.MouseHover, pic0702.MouseHover, pic0703.MouseHover, pic0704.MouseHover, pic0705.MouseHover, pic0706.MouseHover, pic0707.MouseHover, pic0708.MouseHover, pic0709.MouseHover,
+            pic0710.MouseHover, pic0711.MouseHover, pic0712.MouseHover, pic0713.MouseHover, pic0714.MouseHover, pic0715.MouseHover, pic0716.MouseHover, pic0717.MouseHover, pic0718.MouseHover, pic0719.MouseHover,
+            pic0720.MouseHover, pic0721.MouseHover, pic0722.MouseHover, pic0723.MouseHover, pic0724.MouseHover, pic0725.MouseHover, pic0726.MouseHover, pic0727.MouseHover, pic0728.MouseHover, pic0729.MouseHover
+        picHover(sender)
+    End Sub
+    Private Sub pic0800_MouseHover(sender As Object, e As EventArgs) Handles pic0800.MouseHover, pic0801.MouseHover, pic0802.MouseHover, pic0803.MouseHover, pic0804.MouseHover, pic0805.MouseHover, pic0806.MouseHover, pic0807.MouseHover, pic0808.MouseHover, pic0809.MouseHover,
+            pic0810.MouseHover, pic0811.MouseHover, pic0812.MouseHover, pic0813.MouseHover, pic0814.MouseHover, pic0815.MouseHover, pic0816.MouseHover, pic0817.MouseHover, pic0818.MouseHover, pic0819.MouseHover,
+            pic0820.MouseHover, pic0821.MouseHover, pic0822.MouseHover, pic0823.MouseHover, pic0824.MouseHover, pic0825.MouseHover, pic0826.MouseHover, pic0827.MouseHover, pic0828.MouseHover, pic0829.MouseHover
+        picHover(sender)
+    End Sub
+    Private Sub pic0900_MouseHover(sender As Object, e As EventArgs) Handles pic0900.MouseHover, pic0901.MouseHover, pic0902.MouseHover, pic0903.MouseHover, pic0904.MouseHover, pic0905.MouseHover, pic0906.MouseHover, pic0907.MouseHover, pic0908.MouseHover, pic0909.MouseHover,
+            pic0910.MouseHover, pic0911.MouseHover, pic0912.MouseHover, pic0913.MouseHover, pic0914.MouseHover, pic0915.MouseHover, pic0916.MouseHover, pic0917.MouseHover, pic0918.MouseHover, pic0919.MouseHover,
+            pic0920.MouseHover, pic0921.MouseHover, pic0922.MouseHover, pic0923.MouseHover, pic0924.MouseHover, pic0925.MouseHover, pic0926.MouseHover, pic0927.MouseHover, pic0928.MouseHover, pic0929.MouseHover
+        picHover(sender)
+    End Sub
+    Private Sub pic1000_MouseHover(sender As Object, e As EventArgs) Handles pic1000.MouseHover, pic1001.MouseHover, pic1002.MouseHover, pic1003.MouseHover, pic1004.MouseHover, pic1005.MouseHover, pic1006.MouseHover, pic1007.MouseHover, pic1008.MouseHover, pic1009.MouseHover,
+            pic1010.MouseHover, pic1011.MouseHover, pic1012.MouseHover, pic1013.MouseHover, pic1014.MouseHover, pic1015.MouseHover, pic1016.MouseHover, pic1017.MouseHover, pic1018.MouseHover, pic1019.MouseHover,
+            pic1020.MouseHover, pic1021.MouseHover, pic1022.MouseHover, pic1023.MouseHover, pic1024.MouseHover, pic1025.MouseHover, pic1026.MouseHover, pic1027.MouseHover, pic1028.MouseHover, pic1029.MouseHover
         picHover(sender)
     End Sub
 
-    Private Sub pic0002_MouseHover(sender As Object, e As EventArgs) Handles pic0002.MouseHover
+    Private Sub pic1100_MouseHover(sender As Object, e As EventArgs) Handles pic1100.MouseHover, pic1101.MouseHover, pic1102.MouseHover, pic1103.MouseHover, pic1104.MouseHover, pic1105.MouseHover, pic1106.MouseHover, pic1107.MouseHover, pic1108.MouseHover, pic1109.MouseHover,
+            pic1110.MouseHover, pic1111.MouseHover, pic1112.MouseHover, pic1113.MouseHover, pic1114.MouseHover, pic1115.MouseHover, pic1116.MouseHover, pic1117.MouseHover, pic1118.MouseHover, pic1119.MouseHover,
+            pic1120.MouseHover, pic1121.MouseHover, pic1122.MouseHover, pic1123.MouseHover, pic1124.MouseHover, pic1125.MouseHover, pic1126.MouseHover, pic1127.MouseHover, pic1128.MouseHover, pic1129.MouseHover
         picHover(sender)
     End Sub
-    Private Sub pic0003_MouseHover(sender As Object, e As EventArgs) Handles pic0003.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0004_MouseHover(sender As Object, e As EventArgs) Handles pic0004.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0005_MouseHover(sender As Object, e As EventArgs) Handles pic0005.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0006_MouseHover(sender As Object, e As EventArgs) Handles pic0006.MouseHover
+    Private Sub pic1200_MouseHover(sender As Object, e As EventArgs) Handles pic1200.MouseHover, pic1201.MouseHover, pic1202.MouseHover, pic1203.MouseHover, pic1204.MouseHover, pic1205.MouseHover, pic1206.MouseHover, pic1207.MouseHover, pic1208.MouseHover, pic1209.MouseHover,
+            pic1210.MouseHover, pic1211.MouseHover, pic1212.MouseHover, pic1213.MouseHover, pic1214.MouseHover, pic1215.MouseHover, pic1216.MouseHover, pic1217.MouseHover, pic1218.MouseHover, pic1219.MouseHover,
+            pic1220.MouseHover, pic1221.MouseHover, pic1222.MouseHover, pic1223.MouseHover, pic1224.MouseHover, pic1225.MouseHover, pic1226.MouseHover, pic1227.MouseHover, pic1228.MouseHover, pic1229.MouseHover
         picHover(sender)
     End Sub
 
-    Private Sub pic0007_MouseHover(sender As Object, e As EventArgs) Handles pic0007.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0008_MouseHover(sender As Object, e As EventArgs) Handles pic0008.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0009_MouseHover(sender As Object, e As EventArgs) Handles pic0009.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0010_MouseHover(sender As Object, e As EventArgs) Handles pic0010.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0011_MouseHover(sender As Object, e As EventArgs) Handles pic0011.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0012_MouseHover(sender As Object, e As EventArgs) Handles pic0012.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0013_MouseHover(sender As Object, e As EventArgs) Handles pic0013.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0014_MouseHover(sender As Object, e As EventArgs) Handles pic0014.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0015_MouseHover(sender As Object, e As EventArgs) Handles pic0015.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0016_MouseHover(sender As Object, e As EventArgs) Handles pic0016.MouseHover
+    Private Sub pic1300_MouseHover(sender As Object, e As EventArgs) Handles pic1300.MouseHover, pic1301.MouseHover, pic1302.MouseHover, pic1303.MouseHover, pic1304.MouseHover, pic1305.MouseHover, pic1306.MouseHover, pic1307.MouseHover, pic1308.MouseHover, pic1309.MouseHover,
+            pic1310.MouseHover, pic1311.MouseHover, pic1312.MouseHover, pic1313.MouseHover, pic1314.MouseHover, pic1315.MouseHover, pic1316.MouseHover, pic1317.MouseHover, pic1318.MouseHover, pic1319.MouseHover,
+            pic1320.MouseHover, pic1321.MouseHover, pic1322.MouseHover, pic1323.MouseHover, pic1324.MouseHover, pic1325.MouseHover, pic1326.MouseHover, pic1327.MouseHover, pic1328.MouseHover, pic1329.MouseHover
         picHover(sender)
     End Sub
 
-    Private Sub pic0017_MouseHover(sender As Object, e As EventArgs) Handles pic0017.MouseHover
+    Private Sub pic1400_MouseHover(sender As Object, e As EventArgs) Handles pic1400.MouseHover, pic1401.MouseHover, pic1402.MouseHover, pic1403.MouseHover, pic1404.MouseHover, pic1405.MouseHover, pic1406.MouseHover, pic1407.MouseHover, pic1408.MouseHover, pic1409.MouseHover,
+            pic1410.MouseHover, pic1411.MouseHover, pic1412.MouseHover, pic1413.MouseHover, pic1414.MouseHover, pic1415.MouseHover, pic1416.MouseHover, pic1417.MouseHover, pic1418.MouseHover, pic1419.MouseHover,
+            pic1420.MouseHover, pic1421.MouseHover, pic1422.MouseHover, pic1423.MouseHover, pic1424.MouseHover, pic1425.MouseHover, pic1426.MouseHover, pic1427.MouseHover, pic1428.MouseHover, pic1429.MouseHover
         picHover(sender)
     End Sub
-    Private Sub pic0018_MouseHover(sender As Object, e As EventArgs) Handles pic0018.MouseHover
+    Private Sub pic1500_MouseHover(sender As Object, e As EventArgs) Handles pic1500.MouseHover, pic1501.MouseHover, pic1502.MouseHover, pic1503.MouseHover, pic1504.MouseHover, pic1505.MouseHover, pic1506.MouseHover, pic1507.MouseHover, pic1508.MouseHover, pic1509.MouseHover,
+            pic1510.MouseHover, pic1511.MouseHover, pic1512.MouseHover, pic1513.MouseHover, pic1514.MouseHover, pic1515.MouseHover, pic1516.MouseHover, pic1517.MouseHover, pic1518.MouseHover, pic1519.MouseHover,
+            pic1520.MouseHover, pic1521.MouseHover, pic1522.MouseHover, pic1523.MouseHover, pic1524.MouseHover, pic1525.MouseHover, pic1526.MouseHover, pic1527.MouseHover, pic1528.MouseHover, pic1529.MouseHover
         picHover(sender)
     End Sub
-    Private Sub pic0019_MouseHover(sender As Object, e As EventArgs) Handles pic0019.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0020_MouseHover(sender As Object, e As EventArgs) Handles pic0010.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0021_MouseHover(sender As Object, e As EventArgs) Handles pic0021.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0022_MouseHover(sender As Object, e As EventArgs) Handles pic0022.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0023_MouseHover(sender As Object, e As EventArgs) Handles pic0023.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0024_MouseHover(sender As Object, e As EventArgs) Handles pic0024.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0025_MouseHover(sender As Object, e As EventArgs) Handles pic0025.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0026_MouseHover(sender As Object, e As EventArgs) Handles pic0026.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic0027_MouseHover(sender As Object, e As EventArgs) Handles pic0027.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0028_MouseHover(sender As Object, e As EventArgs) Handles pic0028.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0029_MouseHover(sender As Object, e As EventArgs) Handles pic0029.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0101_MouseHover(sender As Object, e As EventArgs) Handles pic0101.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic0102_MouseHover(sender As Object, e As EventArgs) Handles pic0102.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0103_MouseHover(sender As Object, e As EventArgs) Handles pic0103.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0104_MouseHover(sender As Object, e As EventArgs) Handles pic0104.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0105_MouseHover(sender As Object, e As EventArgs) Handles pic0105.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0106_MouseHover(sender As Object, e As EventArgs) Handles pic0106.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic0107_MouseHover(sender As Object, e As EventArgs) Handles pic0107.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0108_MouseHover(sender As Object, e As EventArgs) Handles pic0108.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0109_MouseHover(sender As Object, e As EventArgs) Handles pic0109.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0110_MouseHover(sender As Object, e As EventArgs) Handles pic0110.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0111_MouseHover(sender As Object, e As EventArgs) Handles pic0111.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0112_MouseHover(sender As Object, e As EventArgs) Handles pic0112.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0113_MouseHover(sender As Object, e As EventArgs) Handles pic0113.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0114_MouseHover(sender As Object, e As EventArgs) Handles pic0114.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0115_MouseHover(sender As Object, e As EventArgs) Handles pic0115.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0116_MouseHover(sender As Object, e As EventArgs) Handles pic0116.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic0117_MouseHover(sender As Object, e As EventArgs) Handles pic0117.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0118_MouseHover(sender As Object, e As EventArgs) Handles pic0118.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0119_MouseHover(sender As Object, e As EventArgs) Handles pic0119.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0120_MouseHover(sender As Object, e As EventArgs) Handles pic0110.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0121_MouseHover(sender As Object, e As EventArgs) Handles pic0121.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0122_MouseHover(sender As Object, e As EventArgs) Handles pic0122.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0123_MouseHover(sender As Object, e As EventArgs) Handles pic0123.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0124_MouseHover(sender As Object, e As EventArgs) Handles pic0124.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0125_MouseHover(sender As Object, e As EventArgs) Handles pic0125.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0126_MouseHover(sender As Object, e As EventArgs) Handles pic0126.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic0127_MouseHover(sender As Object, e As EventArgs) Handles pic0127.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0128_MouseHover(sender As Object, e As EventArgs) Handles pic0128.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0129_MouseHover(sender As Object, e As EventArgs) Handles pic0129.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0201_MouseHover(sender As Object, e As EventArgs) Handles pic0201.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic0202_MouseHover(sender As Object, e As EventArgs) Handles pic0202.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0203_MouseHover(sender As Object, e As EventArgs) Handles pic0203.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0204_MouseHover(sender As Object, e As EventArgs) Handles pic0204.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0205_MouseHover(sender As Object, e As EventArgs) Handles pic0205.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0206_MouseHover(sender As Object, e As EventArgs) Handles pic0206.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic0207_MouseHover(sender As Object, e As EventArgs) Handles pic0207.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0208_MouseHover(sender As Object, e As EventArgs) Handles pic0208.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0209_MouseHover(sender As Object, e As EventArgs) Handles pic0209.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0210_MouseHover(sender As Object, e As EventArgs) Handles pic0210.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0211_MouseHover(sender As Object, e As EventArgs) Handles pic0211.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0212_MouseHover(sender As Object, e As EventArgs) Handles pic0212.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0213_MouseHover(sender As Object, e As EventArgs) Handles pic0213.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0214_MouseHover(sender As Object, e As EventArgs) Handles pic0214.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0215_MouseHover(sender As Object, e As EventArgs) Handles pic0215.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0216_MouseHover(sender As Object, e As EventArgs) Handles pic0216.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic0217_MouseHover(sender As Object, e As EventArgs) Handles pic0217.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0218_MouseHover(sender As Object, e As EventArgs) Handles pic0218.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0219_MouseHover(sender As Object, e As EventArgs) Handles pic0219.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0220_MouseHover(sender As Object, e As EventArgs) Handles pic0210.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0221_MouseHover(sender As Object, e As EventArgs) Handles pic0221.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0222_MouseHover(sender As Object, e As EventArgs) Handles pic0222.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0223_MouseHover(sender As Object, e As EventArgs) Handles pic0223.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0224_MouseHover(sender As Object, e As EventArgs) Handles pic0224.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0225_MouseHover(sender As Object, e As EventArgs) Handles pic0225.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0226_MouseHover(sender As Object, e As EventArgs) Handles pic0226.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic0227_MouseHover(sender As Object, e As EventArgs) Handles pic0227.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0228_MouseHover(sender As Object, e As EventArgs) Handles pic0228.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0229_MouseHover(sender As Object, e As EventArgs) Handles pic0229.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0301_MouseHover(sender As Object, e As EventArgs) Handles pic0301.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic0302_MouseHover(sender As Object, e As EventArgs) Handles pic0302.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0303_MouseHover(sender As Object, e As EventArgs) Handles pic0303.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0304_MouseHover(sender As Object, e As EventArgs) Handles pic0304.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0305_MouseHover(sender As Object, e As EventArgs) Handles pic0305.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0306_MouseHover(sender As Object, e As EventArgs) Handles pic0306.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic0307_MouseHover(sender As Object, e As EventArgs) Handles pic0307.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0308_MouseHover(sender As Object, e As EventArgs) Handles pic0308.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0309_MouseHover(sender As Object, e As EventArgs) Handles pic0309.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0310_MouseHover(sender As Object, e As EventArgs) Handles pic0310.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0311_MouseHover(sender As Object, e As EventArgs) Handles pic0311.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0312_MouseHover(sender As Object, e As EventArgs) Handles pic0312.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0313_MouseHover(sender As Object, e As EventArgs) Handles pic0313.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0314_MouseHover(sender As Object, e As EventArgs) Handles pic0314.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0315_MouseHover(sender As Object, e As EventArgs) Handles pic0315.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0316_MouseHover(sender As Object, e As EventArgs) Handles pic0316.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic0317_MouseHover(sender As Object, e As EventArgs) Handles pic0317.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0318_MouseHover(sender As Object, e As EventArgs) Handles pic0318.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0319_MouseHover(sender As Object, e As EventArgs) Handles pic0319.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0320_MouseHover(sender As Object, e As EventArgs) Handles pic0310.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0321_MouseHover(sender As Object, e As EventArgs) Handles pic0321.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0322_MouseHover(sender As Object, e As EventArgs) Handles pic0322.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0323_MouseHover(sender As Object, e As EventArgs) Handles pic0323.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0324_MouseHover(sender As Object, e As EventArgs) Handles pic0324.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0325_MouseHover(sender As Object, e As EventArgs) Handles pic0325.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0326_MouseHover(sender As Object, e As EventArgs) Handles pic0326.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic0327_MouseHover(sender As Object, e As EventArgs) Handles pic0327.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0328_MouseHover(sender As Object, e As EventArgs) Handles pic0328.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0329_MouseHover(sender As Object, e As EventArgs) Handles pic0329.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0401_MouseHover(sender As Object, e As EventArgs) Handles pic0401.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic0402_MouseHover(sender As Object, e As EventArgs) Handles pic0402.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0403_MouseHover(sender As Object, e As EventArgs) Handles pic0403.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0404_MouseHover(sender As Object, e As EventArgs) Handles pic0404.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0405_MouseHover(sender As Object, e As EventArgs) Handles pic0405.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0406_MouseHover(sender As Object, e As EventArgs) Handles pic0406.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic0407_MouseHover(sender As Object, e As EventArgs) Handles pic0407.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0408_MouseHover(sender As Object, e As EventArgs) Handles pic0408.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0409_MouseHover(sender As Object, e As EventArgs) Handles pic0409.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0410_MouseHover(sender As Object, e As EventArgs) Handles pic0410.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0411_MouseHover(sender As Object, e As EventArgs) Handles pic0411.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0412_MouseHover(sender As Object, e As EventArgs) Handles pic0412.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0413_MouseHover(sender As Object, e As EventArgs) Handles pic0413.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0414_MouseHover(sender As Object, e As EventArgs) Handles pic0414.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0415_MouseHover(sender As Object, e As EventArgs) Handles pic0415.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0416_MouseHover(sender As Object, e As EventArgs) Handles pic0416.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic0417_MouseHover(sender As Object, e As EventArgs) Handles pic0417.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0418_MouseHover(sender As Object, e As EventArgs) Handles pic0418.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0419_MouseHover(sender As Object, e As EventArgs) Handles pic0419.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0420_MouseHover(sender As Object, e As EventArgs) Handles pic0410.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0421_MouseHover(sender As Object, e As EventArgs) Handles pic0421.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0422_MouseHover(sender As Object, e As EventArgs) Handles pic0422.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0423_MouseHover(sender As Object, e As EventArgs) Handles pic0423.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0424_MouseHover(sender As Object, e As EventArgs) Handles pic0424.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0425_MouseHover(sender As Object, e As EventArgs) Handles pic0425.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0426_MouseHover(sender As Object, e As EventArgs) Handles pic0426.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic0427_MouseHover(sender As Object, e As EventArgs) Handles pic0427.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0428_MouseHover(sender As Object, e As EventArgs) Handles pic0428.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0429_MouseHover(sender As Object, e As EventArgs) Handles pic0429.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0501_MouseHover(sender As Object, e As EventArgs) Handles pic0501.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic0502_MouseHover(sender As Object, e As EventArgs) Handles pic0502.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0503_MouseHover(sender As Object, e As EventArgs) Handles pic0503.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0504_MouseHover(sender As Object, e As EventArgs) Handles pic0504.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0505_MouseHover(sender As Object, e As EventArgs) Handles pic0505.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0506_MouseHover(sender As Object, e As EventArgs) Handles pic0506.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic0507_MouseHover(sender As Object, e As EventArgs) Handles pic0507.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0508_MouseHover(sender As Object, e As EventArgs) Handles pic0508.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0509_MouseHover(sender As Object, e As EventArgs) Handles pic0509.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0510_MouseHover(sender As Object, e As EventArgs) Handles pic0510.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0511_MouseHover(sender As Object, e As EventArgs) Handles pic0511.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0512_MouseHover(sender As Object, e As EventArgs) Handles pic0512.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0513_MouseHover(sender As Object, e As EventArgs) Handles pic0513.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0514_MouseHover(sender As Object, e As EventArgs) Handles pic0514.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0515_MouseHover(sender As Object, e As EventArgs) Handles pic0515.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0516_MouseHover(sender As Object, e As EventArgs) Handles pic0516.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic0517_MouseHover(sender As Object, e As EventArgs) Handles pic0517.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0518_MouseHover(sender As Object, e As EventArgs) Handles pic0518.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0519_MouseHover(sender As Object, e As EventArgs) Handles pic0519.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0520_MouseHover(sender As Object, e As EventArgs) Handles pic0510.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0521_MouseHover(sender As Object, e As EventArgs) Handles pic0521.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0522_MouseHover(sender As Object, e As EventArgs) Handles pic0522.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0523_MouseHover(sender As Object, e As EventArgs) Handles pic0523.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0524_MouseHover(sender As Object, e As EventArgs) Handles pic0524.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0525_MouseHover(sender As Object, e As EventArgs) Handles pic0525.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0526_MouseHover(sender As Object, e As EventArgs) Handles pic0526.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic0527_MouseHover(sender As Object, e As EventArgs) Handles pic0527.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0528_MouseHover(sender As Object, e As EventArgs) Handles pic0528.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0529_MouseHover(sender As Object, e As EventArgs) Handles pic0529.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0601_MouseHover(sender As Object, e As EventArgs) Handles pic0601.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic0602_MouseHover(sender As Object, e As EventArgs) Handles pic0602.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0603_MouseHover(sender As Object, e As EventArgs) Handles pic0603.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0604_MouseHover(sender As Object, e As EventArgs) Handles pic0604.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0605_MouseHover(sender As Object, e As EventArgs) Handles pic0605.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0606_MouseHover(sender As Object, e As EventArgs) Handles pic0606.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic0607_MouseHover(sender As Object, e As EventArgs) Handles pic0607.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0608_MouseHover(sender As Object, e As EventArgs) Handles pic0608.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0609_MouseHover(sender As Object, e As EventArgs) Handles pic0609.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0610_MouseHover(sender As Object, e As EventArgs) Handles pic0610.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0611_MouseHover(sender As Object, e As EventArgs) Handles pic0611.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0612_MouseHover(sender As Object, e As EventArgs) Handles pic0612.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0613_MouseHover(sender As Object, e As EventArgs) Handles pic0613.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0614_MouseHover(sender As Object, e As EventArgs) Handles pic0614.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0615_MouseHover(sender As Object, e As EventArgs) Handles pic0615.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0616_MouseHover(sender As Object, e As EventArgs) Handles pic0616.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic0617_MouseHover(sender As Object, e As EventArgs) Handles pic0617.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0618_MouseHover(sender As Object, e As EventArgs) Handles pic0618.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0619_MouseHover(sender As Object, e As EventArgs) Handles pic0619.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0620_MouseHover(sender As Object, e As EventArgs) Handles pic0610.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0621_MouseHover(sender As Object, e As EventArgs) Handles pic0621.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0622_MouseHover(sender As Object, e As EventArgs) Handles pic0622.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0623_MouseHover(sender As Object, e As EventArgs) Handles pic0623.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0624_MouseHover(sender As Object, e As EventArgs) Handles pic0624.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0625_MouseHover(sender As Object, e As EventArgs) Handles pic0625.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0626_MouseHover(sender As Object, e As EventArgs) Handles pic0626.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic0627_MouseHover(sender As Object, e As EventArgs) Handles pic0627.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0628_MouseHover(sender As Object, e As EventArgs) Handles pic0628.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0629_MouseHover(sender As Object, e As EventArgs) Handles pic0629.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0701_MouseHover(sender As Object, e As EventArgs) Handles pic0701.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic0702_MouseHover(sender As Object, e As EventArgs) Handles pic0702.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0703_MouseHover(sender As Object, e As EventArgs) Handles pic0703.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0704_MouseHover(sender As Object, e As EventArgs) Handles pic0704.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0705_MouseHover(sender As Object, e As EventArgs) Handles pic0705.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0706_MouseHover(sender As Object, e As EventArgs) Handles pic0706.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic0707_MouseHover(sender As Object, e As EventArgs) Handles pic0707.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0708_MouseHover(sender As Object, e As EventArgs) Handles pic0708.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0709_MouseHover(sender As Object, e As EventArgs) Handles pic0709.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0710_MouseHover(sender As Object, e As EventArgs) Handles pic0710.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0711_MouseHover(sender As Object, e As EventArgs) Handles pic0711.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0712_MouseHover(sender As Object, e As EventArgs) Handles pic0712.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0713_MouseHover(sender As Object, e As EventArgs) Handles pic0713.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0714_MouseHover(sender As Object, e As EventArgs) Handles pic0714.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0715_MouseHover(sender As Object, e As EventArgs) Handles pic0715.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0716_MouseHover(sender As Object, e As EventArgs) Handles pic0716.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic0717_MouseHover(sender As Object, e As EventArgs) Handles pic0717.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0718_MouseHover(sender As Object, e As EventArgs) Handles pic0718.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0719_MouseHover(sender As Object, e As EventArgs) Handles pic0719.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0720_MouseHover(sender As Object, e As EventArgs) Handles pic0720.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0721_MouseHover(sender As Object, e As EventArgs) Handles pic0721.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0722_MouseHover(sender As Object, e As EventArgs) Handles pic0722.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0723_MouseHover(sender As Object, e As EventArgs) Handles pic0723.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0724_MouseHover(sender As Object, e As EventArgs) Handles pic0724.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0725_MouseHover(sender As Object, e As EventArgs) Handles pic0725.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0726_MouseHover(sender As Object, e As EventArgs) Handles pic0726.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0727_MouseHover(sender As Object, e As EventArgs) Handles pic0727.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0728_MouseHover(sender As Object, e As EventArgs) Handles pic0728.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0729_MouseHover(sender As Object, e As EventArgs) Handles pic0729.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0801_MouseHover(sender As Object, e As EventArgs) Handles pic0801.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic0802_MouseHover(sender As Object, e As EventArgs) Handles pic0802.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0803_MouseHover(sender As Object, e As EventArgs) Handles pic0803.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0804_MouseHover(sender As Object, e As EventArgs) Handles pic0804.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0805_MouseHover(sender As Object, e As EventArgs) Handles pic0805.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0806_MouseHover(sender As Object, e As EventArgs) Handles pic0806.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic0807_MouseHover(sender As Object, e As EventArgs) Handles pic0807.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0808_MouseHover(sender As Object, e As EventArgs) Handles pic0808.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0809_MouseHover(sender As Object, e As EventArgs) Handles pic0809.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0810_MouseHover(sender As Object, e As EventArgs) Handles pic0810.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0811_MouseHover(sender As Object, e As EventArgs) Handles pic0811.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0812_MouseHover(sender As Object, e As EventArgs) Handles pic0812.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0813_MouseHover(sender As Object, e As EventArgs) Handles pic0813.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0814_MouseHover(sender As Object, e As EventArgs) Handles pic0814.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0815_MouseHover(sender As Object, e As EventArgs) Handles pic0815.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0816_MouseHover(sender As Object, e As EventArgs) Handles pic0816.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic0817_MouseHover(sender As Object, e As EventArgs) Handles pic0817.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0818_MouseHover(sender As Object, e As EventArgs) Handles pic0818.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0819_MouseHover(sender As Object, e As EventArgs) Handles pic0819.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0820_MouseHover(sender As Object, e As EventArgs) Handles pic0810.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0821_MouseHover(sender As Object, e As EventArgs) Handles pic0821.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0822_MouseHover(sender As Object, e As EventArgs) Handles pic0822.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0823_MouseHover(sender As Object, e As EventArgs) Handles pic0823.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0824_MouseHover(sender As Object, e As EventArgs) Handles pic0824.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0825_MouseHover(sender As Object, e As EventArgs) Handles pic0825.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0826_MouseHover(sender As Object, e As EventArgs) Handles pic0826.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic0827_MouseHover(sender As Object, e As EventArgs) Handles pic0827.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0828_MouseHover(sender As Object, e As EventArgs) Handles pic0828.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0829_MouseHover(sender As Object, e As EventArgs) Handles pic0829.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0901_MouseHover(sender As Object, e As EventArgs) Handles pic0901.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic0902_MouseHover(sender As Object, e As EventArgs) Handles pic0902.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0903_MouseHover(sender As Object, e As EventArgs) Handles pic0903.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0904_MouseHover(sender As Object, e As EventArgs) Handles pic0904.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0905_MouseHover(sender As Object, e As EventArgs) Handles pic0905.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0906_MouseHover(sender As Object, e As EventArgs) Handles pic0906.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic0907_MouseHover(sender As Object, e As EventArgs) Handles pic0907.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0908_MouseHover(sender As Object, e As EventArgs) Handles pic0908.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0909_MouseHover(sender As Object, e As EventArgs) Handles pic0909.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0910_MouseHover(sender As Object, e As EventArgs) Handles pic0910.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0911_MouseHover(sender As Object, e As EventArgs) Handles pic0911.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0912_MouseHover(sender As Object, e As EventArgs) Handles pic0912.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0913_MouseHover(sender As Object, e As EventArgs) Handles pic0913.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0914_MouseHover(sender As Object, e As EventArgs) Handles pic0914.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0915_MouseHover(sender As Object, e As EventArgs) Handles pic0915.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0916_MouseHover(sender As Object, e As EventArgs) Handles pic0916.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic0917_MouseHover(sender As Object, e As EventArgs) Handles pic0917.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0918_MouseHover(sender As Object, e As EventArgs) Handles pic0918.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0919_MouseHover(sender As Object, e As EventArgs) Handles pic0919.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0920_MouseHover(sender As Object, e As EventArgs) Handles pic0910.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0921_MouseHover(sender As Object, e As EventArgs) Handles pic0921.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0922_MouseHover(sender As Object, e As EventArgs) Handles pic0922.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0923_MouseHover(sender As Object, e As EventArgs) Handles pic0923.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0924_MouseHover(sender As Object, e As EventArgs) Handles pic0924.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0925_MouseHover(sender As Object, e As EventArgs) Handles pic0925.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0926_MouseHover(sender As Object, e As EventArgs) Handles pic0926.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic0927_MouseHover(sender As Object, e As EventArgs) Handles pic0927.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0928_MouseHover(sender As Object, e As EventArgs) Handles pic0928.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic0929_MouseHover(sender As Object, e As EventArgs) Handles pic0929.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1001_MouseHover(sender As Object, e As EventArgs) Handles pic1001.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic1002_MouseHover(sender As Object, e As EventArgs) Handles pic1002.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1003_MouseHover(sender As Object, e As EventArgs) Handles pic1003.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1004_MouseHover(sender As Object, e As EventArgs) Handles pic1004.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1005_MouseHover(sender As Object, e As EventArgs) Handles pic1005.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1006_MouseHover(sender As Object, e As EventArgs) Handles pic1006.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic1007_MouseHover(sender As Object, e As EventArgs) Handles pic1007.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1008_MouseHover(sender As Object, e As EventArgs) Handles pic1008.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1009_MouseHover(sender As Object, e As EventArgs) Handles pic1009.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1010_MouseHover(sender As Object, e As EventArgs) Handles pic1010.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1011_MouseHover(sender As Object, e As EventArgs) Handles pic1011.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1012_MouseHover(sender As Object, e As EventArgs) Handles pic1012.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1013_MouseHover(sender As Object, e As EventArgs) Handles pic1013.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1014_MouseHover(sender As Object, e As EventArgs) Handles pic1014.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1015_MouseHover(sender As Object, e As EventArgs) Handles pic1015.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1016_MouseHover(sender As Object, e As EventArgs) Handles pic1016.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic1017_MouseHover(sender As Object, e As EventArgs) Handles pic1017.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1018_MouseHover(sender As Object, e As EventArgs) Handles pic1018.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1019_MouseHover(sender As Object, e As EventArgs) Handles pic1019.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1020_MouseHover(sender As Object, e As EventArgs) Handles pic1010.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1021_MouseHover(sender As Object, e As EventArgs) Handles pic1021.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1022_MouseHover(sender As Object, e As EventArgs) Handles pic1022.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1023_MouseHover(sender As Object, e As EventArgs) Handles pic1023.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1024_MouseHover(sender As Object, e As EventArgs) Handles pic1024.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1025_MouseHover(sender As Object, e As EventArgs) Handles pic1025.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1026_MouseHover(sender As Object, e As EventArgs) Handles pic1026.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1027_MouseHover(sender As Object, e As EventArgs) Handles pic1027.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1028_MouseHover(sender As Object, e As EventArgs) Handles pic1028.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1029_MouseHover(sender As Object, e As EventArgs) Handles pic1029.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1101_MouseHover(sender As Object, e As EventArgs) Handles pic1101.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic1102_MouseHover(sender As Object, e As EventArgs) Handles pic1102.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1103_MouseHover(sender As Object, e As EventArgs) Handles pic1103.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1104_MouseHover(sender As Object, e As EventArgs) Handles pic1104.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1105_MouseHover(sender As Object, e As EventArgs) Handles pic1105.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1106_MouseHover(sender As Object, e As EventArgs) Handles pic1106.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic1107_MouseHover(sender As Object, e As EventArgs) Handles pic1107.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1108_MouseHover(sender As Object, e As EventArgs) Handles pic1108.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1109_MouseHover(sender As Object, e As EventArgs) Handles pic1109.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1110_MouseHover(sender As Object, e As EventArgs) Handles pic1110.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1111_MouseHover(sender As Object, e As EventArgs) Handles pic1111.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1112_MouseHover(sender As Object, e As EventArgs) Handles pic1112.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1113_MouseHover(sender As Object, e As EventArgs) Handles pic1113.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1114_MouseHover(sender As Object, e As EventArgs) Handles pic1114.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1115_MouseHover(sender As Object, e As EventArgs) Handles pic1115.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1116_MouseHover(sender As Object, e As EventArgs) Handles pic1116.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic1117_MouseHover(sender As Object, e As EventArgs) Handles pic1117.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1118_MouseHover(sender As Object, e As EventArgs) Handles pic1118.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1119_MouseHover(sender As Object, e As EventArgs) Handles pic1119.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1120_MouseHover(sender As Object, e As EventArgs) Handles pic1110.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1121_MouseHover(sender As Object, e As EventArgs) Handles pic1121.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1122_MouseHover(sender As Object, e As EventArgs) Handles pic1122.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1123_MouseHover(sender As Object, e As EventArgs) Handles pic1123.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1124_MouseHover(sender As Object, e As EventArgs) Handles pic1124.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1125_MouseHover(sender As Object, e As EventArgs) Handles pic1125.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1126_MouseHover(sender As Object, e As EventArgs) Handles pic1126.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1127_MouseHover(sender As Object, e As EventArgs) Handles pic1127.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1128_MouseHover(sender As Object, e As EventArgs) Handles pic1128.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1129_MouseHover(sender As Object, e As EventArgs) Handles pic1129.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1201_MouseHover(sender As Object, e As EventArgs) Handles pic1201.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic1202_MouseHover(sender As Object, e As EventArgs) Handles pic1202.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1203_MouseHover(sender As Object, e As EventArgs) Handles pic1203.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1204_MouseHover(sender As Object, e As EventArgs) Handles pic1204.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1205_MouseHover(sender As Object, e As EventArgs) Handles pic1205.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1206_MouseHover(sender As Object, e As EventArgs) Handles pic1206.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic1207_MouseHover(sender As Object, e As EventArgs) Handles pic1207.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1208_MouseHover(sender As Object, e As EventArgs) Handles pic1208.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1209_MouseHover(sender As Object, e As EventArgs) Handles pic1209.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1210_MouseHover(sender As Object, e As EventArgs) Handles pic1210.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1211_MouseHover(sender As Object, e As EventArgs) Handles pic1211.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1212_MouseHover(sender As Object, e As EventArgs) Handles pic1212.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1213_MouseHover(sender As Object, e As EventArgs) Handles pic1213.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1214_MouseHover(sender As Object, e As EventArgs) Handles pic1214.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1215_MouseHover(sender As Object, e As EventArgs) Handles pic1215.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1216_MouseHover(sender As Object, e As EventArgs) Handles pic1216.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic1217_MouseHover(sender As Object, e As EventArgs) Handles pic1217.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1218_MouseHover(sender As Object, e As EventArgs) Handles pic1218.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1219_MouseHover(sender As Object, e As EventArgs) Handles pic1219.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1220_MouseHover(sender As Object, e As EventArgs) Handles pic1210.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1221_MouseHover(sender As Object, e As EventArgs) Handles pic1221.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1222_MouseHover(sender As Object, e As EventArgs) Handles pic1222.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1223_MouseHover(sender As Object, e As EventArgs) Handles pic1223.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1224_MouseHover(sender As Object, e As EventArgs) Handles pic1224.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1225_MouseHover(sender As Object, e As EventArgs) Handles pic1225.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1226_MouseHover(sender As Object, e As EventArgs) Handles pic1226.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1227_MouseHover(sender As Object, e As EventArgs) Handles pic1227.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1228_MouseHover(sender As Object, e As EventArgs) Handles pic1228.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1229_MouseHover(sender As Object, e As EventArgs) Handles pic1229.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1301_MouseHover(sender As Object, e As EventArgs) Handles pic1301.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic1302_MouseHover(sender As Object, e As EventArgs) Handles pic1302.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1303_MouseHover(sender As Object, e As EventArgs) Handles pic1303.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1304_MouseHover(sender As Object, e As EventArgs) Handles pic1304.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1305_MouseHover(sender As Object, e As EventArgs) Handles pic1305.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1306_MouseHover(sender As Object, e As EventArgs) Handles pic1306.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic1307_MouseHover(sender As Object, e As EventArgs) Handles pic1307.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1308_MouseHover(sender As Object, e As EventArgs) Handles pic1308.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1309_MouseHover(sender As Object, e As EventArgs) Handles pic1309.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1310_MouseHover(sender As Object, e As EventArgs) Handles pic1310.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1311_MouseHover(sender As Object, e As EventArgs) Handles pic1311.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1312_MouseHover(sender As Object, e As EventArgs) Handles pic1312.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1313_MouseHover(sender As Object, e As EventArgs) Handles pic1313.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1314_MouseHover(sender As Object, e As EventArgs) Handles pic1314.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1315_MouseHover(sender As Object, e As EventArgs) Handles pic1315.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1316_MouseHover(sender As Object, e As EventArgs) Handles pic1316.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic1317_MouseHover(sender As Object, e As EventArgs) Handles pic1317.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1318_MouseHover(sender As Object, e As EventArgs) Handles pic1318.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1319_MouseHover(sender As Object, e As EventArgs) Handles pic1319.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1320_MouseHover(sender As Object, e As EventArgs) Handles pic1310.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1321_MouseHover(sender As Object, e As EventArgs) Handles pic1321.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1322_MouseHover(sender As Object, e As EventArgs) Handles pic1322.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1323_MouseHover(sender As Object, e As EventArgs) Handles pic1323.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1324_MouseHover(sender As Object, e As EventArgs) Handles pic1324.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1325_MouseHover(sender As Object, e As EventArgs) Handles pic1325.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1326_MouseHover(sender As Object, e As EventArgs) Handles pic1326.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1327_MouseHover(sender As Object, e As EventArgs) Handles pic1327.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1328_MouseHover(sender As Object, e As EventArgs) Handles pic1328.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1329_MouseHover(sender As Object, e As EventArgs) Handles pic1329.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1401_MouseHover(sender As Object, e As EventArgs) Handles pic1401.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic1402_MouseHover(sender As Object, e As EventArgs) Handles pic1402.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1403_MouseHover(sender As Object, e As EventArgs) Handles pic1403.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1404_MouseHover(sender As Object, e As EventArgs) Handles pic1404.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1405_MouseHover(sender As Object, e As EventArgs) Handles pic1405.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1406_MouseHover(sender As Object, e As EventArgs) Handles pic1406.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic1407_MouseHover(sender As Object, e As EventArgs) Handles pic1407.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1408_MouseHover(sender As Object, e As EventArgs) Handles pic1408.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1409_MouseHover(sender As Object, e As EventArgs) Handles pic1409.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1410_MouseHover(sender As Object, e As EventArgs) Handles pic1410.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1411_MouseHover(sender As Object, e As EventArgs) Handles pic1411.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1412_MouseHover(sender As Object, e As EventArgs) Handles pic1412.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1413_MouseHover(sender As Object, e As EventArgs) Handles pic1413.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1414_MouseHover(sender As Object, e As EventArgs) Handles pic1414.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1415_MouseHover(sender As Object, e As EventArgs) Handles pic1415.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1416_MouseHover(sender As Object, e As EventArgs) Handles pic1416.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic1417_MouseHover(sender As Object, e As EventArgs) Handles pic1417.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1418_MouseHover(sender As Object, e As EventArgs) Handles pic1418.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1419_MouseHover(sender As Object, e As EventArgs) Handles pic1419.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1420_MouseHover(sender As Object, e As EventArgs) Handles pic1410.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1421_MouseHover(sender As Object, e As EventArgs) Handles pic1421.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1422_MouseHover(sender As Object, e As EventArgs) Handles pic1422.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1423_MouseHover(sender As Object, e As EventArgs) Handles pic1423.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1424_MouseHover(sender As Object, e As EventArgs) Handles pic1424.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1425_MouseHover(sender As Object, e As EventArgs) Handles pic1425.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1426_MouseHover(sender As Object, e As EventArgs) Handles pic1426.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1427_MouseHover(sender As Object, e As EventArgs) Handles pic1427.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1428_MouseHover(sender As Object, e As EventArgs) Handles pic1428.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1429_MouseHover(sender As Object, e As EventArgs) Handles pic1429.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1501_MouseHover(sender As Object, e As EventArgs) Handles pic1501.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic1502_MouseHover(sender As Object, e As EventArgs) Handles pic1502.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1503_MouseHover(sender As Object, e As EventArgs) Handles pic1503.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1504_MouseHover(sender As Object, e As EventArgs) Handles pic1504.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1505_MouseHover(sender As Object, e As EventArgs) Handles pic1505.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1506_MouseHover(sender As Object, e As EventArgs) Handles pic1506.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic1507_MouseHover(sender As Object, e As EventArgs) Handles pic1507.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1508_MouseHover(sender As Object, e As EventArgs) Handles pic1508.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1509_MouseHover(sender As Object, e As EventArgs) Handles pic1509.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1510_MouseHover(sender As Object, e As EventArgs) Handles pic1510.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1511_MouseHover(sender As Object, e As EventArgs) Handles pic1511.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1512_MouseHover(sender As Object, e As EventArgs) Handles pic1512.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1513_MouseHover(sender As Object, e As EventArgs) Handles pic1513.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1514_MouseHover(sender As Object, e As EventArgs) Handles pic1514.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1515_MouseHover(sender As Object, e As EventArgs) Handles pic1515.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1516_MouseHover(sender As Object, e As EventArgs) Handles pic1516.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic1517_MouseHover(sender As Object, e As EventArgs) Handles pic1517.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1518_MouseHover(sender As Object, e As EventArgs) Handles pic1518.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1519_MouseHover(sender As Object, e As EventArgs) Handles pic1519.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1520_MouseHover(sender As Object, e As EventArgs) Handles pic1510.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1521_MouseHover(sender As Object, e As EventArgs) Handles pic1521.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1522_MouseHover(sender As Object, e As EventArgs) Handles pic1522.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1523_MouseHover(sender As Object, e As EventArgs) Handles pic1523.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1524_MouseHover(sender As Object, e As EventArgs) Handles pic1524.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1525_MouseHover(sender As Object, e As EventArgs) Handles pic1525.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1526_MouseHover(sender As Object, e As EventArgs) Handles pic1526.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1527_MouseHover(sender As Object, e As EventArgs) Handles pic1527.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1528_MouseHover(sender As Object, e As EventArgs) Handles pic1528.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1529_MouseHover(sender As Object, e As EventArgs) Handles pic1529.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1601_MouseHover(sender As Object, e As EventArgs) Handles pic1601.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic1602_MouseHover(sender As Object, e As EventArgs) Handles pic1602.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1603_MouseHover(sender As Object, e As EventArgs) Handles pic1603.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1604_MouseHover(sender As Object, e As EventArgs) Handles pic1604.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1605_MouseHover(sender As Object, e As EventArgs) Handles pic1605.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1606_MouseHover(sender As Object, e As EventArgs) Handles pic1606.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic1607_MouseHover(sender As Object, e As EventArgs) Handles pic1607.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1608_MouseHover(sender As Object, e As EventArgs) Handles pic1608.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1609_MouseHover(sender As Object, e As EventArgs) Handles pic1609.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1610_MouseHover(sender As Object, e As EventArgs) Handles pic1610.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1611_MouseHover(sender As Object, e As EventArgs) Handles pic1611.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1612_MouseHover(sender As Object, e As EventArgs) Handles pic1612.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1613_MouseHover(sender As Object, e As EventArgs) Handles pic1613.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1614_MouseHover(sender As Object, e As EventArgs) Handles pic1614.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1615_MouseHover(sender As Object, e As EventArgs) Handles pic1615.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1616_MouseHover(sender As Object, e As EventArgs) Handles pic1616.MouseHover
-        picHover(sender)
-    End Sub
-
-    Private Sub pic1617_MouseHover(sender As Object, e As EventArgs) Handles pic1617.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1618_MouseHover(sender As Object, e As EventArgs) Handles pic1618.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1619_MouseHover(sender As Object, e As EventArgs) Handles pic1619.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1620_MouseHover(sender As Object, e As EventArgs) Handles pic1610.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1621_MouseHover(sender As Object, e As EventArgs) Handles pic1621.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1622_MouseHover(sender As Object, e As EventArgs) Handles pic1622.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1623_MouseHover(sender As Object, e As EventArgs) Handles pic1623.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1624_MouseHover(sender As Object, e As EventArgs) Handles pic1624.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1625_MouseHover(sender As Object, e As EventArgs) Handles pic1625.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1626_MouseHover(sender As Object, e As EventArgs) Handles pic1626.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1627_MouseHover(sender As Object, e As EventArgs) Handles pic1627.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1628_MouseHover(sender As Object, e As EventArgs) Handles pic1628.MouseHover
-        picHover(sender)
-    End Sub
-    Private Sub pic1629_MouseHover(sender As Object, e As EventArgs) Handles pic1629.MouseHover
+    Private Sub pic1600_MouseHover(sender As Object, e As EventArgs) Handles pic1600.MouseHover, pic1601.MouseHover, pic1602.MouseHover, pic1603.MouseHover, pic1604.MouseHover, pic1605.MouseHover, pic1606.MouseHover, pic1607.MouseHover, pic1608.MouseHover, pic1609.MouseHover,
+            pic1610.MouseHover, pic1611.MouseHover, pic1612.MouseHover, pic1613.MouseHover, pic1614.MouseHover, pic1615.MouseHover, pic1616.MouseHover, pic1617.MouseHover, pic1618.MouseHover, pic1619.MouseHover,
+            pic1620.MouseHover, pic1621.MouseHover, pic1622.MouseHover, pic1623.MouseHover, pic1624.MouseHover, pic1625.MouseHover, pic1626.MouseHover, pic1627.MouseHover, pic1628.MouseHover, pic1629.MouseHover
         picHover(sender)
     End Sub
     Private Sub NewLayoutToolStripMenuItem_Click(sender As Object, e As EventArgs) Handles NewLayoutToolStripMenuItem.Click
@@ -7810,18 +6441,16 @@ rename_error:
     End Sub
 
     Private Sub cmdRevealAddressesPage_Click(sender As Object, e As EventArgs) Handles cmdRevealAddressesPage.Click
-        GleisbildDisplayAddresses()
+        Reveal_Addr = Not Reveal_Addr
+        GleisbildDisplay() ' GleisbildDisplayAddresses()
     End Sub
     Private Sub cmdRevealTextPage_Click(sender As Object, e As EventArgs) Handles cmdRevealTextPage.Click
-        GleisbildDisplayTexts()
+        Reveal_Text = Not Reveal_Text
+        GleisbildDisplay() ' GleisbildDisplayTexts()
     End Sub
 
     Private Sub cmdReturnToTC_Click(sender As Object, e As EventArgs) Handles cmdReturnToTC.Click
         CloseShop()
-    End Sub
-
-    Private Sub cmdRevealAddressesRoute_Click(sender As Object, e As EventArgs) Handles cmdRevealAddressesRoute.Click
-        GleisbildDisplayAddresses()
     End Sub
 
     Private Sub cmdMoveLeft_Click(sender As Object, e As EventArgs) Handles cmdMoveLeft.Click
@@ -7940,10 +6569,6 @@ rename_error:
         GleisbildDisplay()
     End Sub
 
-    Private Sub cmdDisplayRefresh_Click(sender As Object, e As EventArgs) Handles cmdDisplayRefresh.Click
-        Call RefreshToolStripMenuItem_Click(sender, e)
-    End Sub
-
     Private Sub btnWindowMoveDown_Click(sender As Object, e As EventArgs) Handles btnWindowMoveDown.Click
         WindowMove(5, 0)
     End Sub
@@ -7966,7 +6591,17 @@ rename_error:
 
 
     Private Sub btnDisplayRefreshEdit_Click(sender As Object, e As EventArgs) Handles btnDisplayRefreshEdit.Click
-        Call RefreshToolStripMenuItem_Click(sender, e)
+        ' Toggle visibility of addresses and text. Since they could overwrite each other it is either or, or none.
+        If Reveal_Addr Then
+            Reveal_Addr = False
+            Reveal_Text = True
+        ElseIf Reveal_Text Then
+            Reveal_Addr = False
+            Reveal_Text = False
+        Else
+            Reveal_Addr = True
+        End If
+        GleisbildDisplay()
     End Sub
 
     Private Sub lstLayoutPages_Click(sender As Object, e As EventArgs) Handles lstLayoutPages.Click

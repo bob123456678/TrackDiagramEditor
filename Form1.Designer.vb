@@ -617,9 +617,10 @@ Partial Class Form1
         Me.cmdCommit = New System.Windows.Forms.Button()
         Me.cmdEdit = New System.Windows.Forms.Button()
         Me.grpIcons = New System.Windows.Forms.GroupBox()
-        Me.picIconPermLeft = New System.Windows.Forms.PictureBox()
-        Me.picIconPermRight = New System.Windows.Forms.PictureBox()
+        Me.grpCustom = New System.Windows.Forms.GroupBox()
         Me.picIconPermY = New System.Windows.Forms.PictureBox()
+        Me.picIconPermRight = New System.Windows.Forms.PictureBox()
+        Me.picIconPermLeft = New System.Windows.Forms.PictureBox()
         Me.picIconLayout = New System.Windows.Forms.PictureBox()
         Me.picIconSignalSH01 = New System.Windows.Forms.PictureBox()
         Me.picIconStdRed = New System.Windows.Forms.PictureBox()
@@ -692,7 +693,6 @@ Partial Class Form1
         Me.FolderBrowserDialog1 = New System.Windows.Forms.FolderBrowserDialog()
         Me.grpLayoutPages = New System.Windows.Forms.GroupBox()
         Me.cmdRevealAddressesPage = New System.Windows.Forms.Button()
-        Me.cmdDisplayRefresh = New System.Windows.Forms.Button()
         Me.cmdRevealTextPage = New System.Windows.Forms.Button()
         Me.btnDuplicatePage = New System.Windows.Forms.Button()
         Me.btnRenameLayoutPage = New System.Windows.Forms.Button()
@@ -700,14 +700,12 @@ Partial Class Form1
         Me.btnAddLayoutPage = New System.Windows.Forms.Button()
         Me.lblLayoutPages = New System.Windows.Forms.Label()
         Me.lstLayoutPages = New System.Windows.Forms.ListBox()
-        Me.cmdRevealAddressesRoute = New System.Windows.Forms.Button()
         Me.grpMoveWindow = New System.Windows.Forms.GroupBox()
         Me.btnWindowReset = New System.Windows.Forms.Button()
         Me.btnWindowMoveDown = New System.Windows.Forms.Button()
         Me.btnWindowMoveRight = New System.Windows.Forms.Button()
         Me.btnWindowMoveUp = New System.Windows.Forms.Button()
         Me.btnWindowMoveLeft = New System.Windows.Forms.Button()
-        Me.grpCustom = New System.Windows.Forms.GroupBox()
         Me.MenuStrip1.SuspendLayout
         CType(Me.pic0304, System.ComponentModel.ISupportInitialize).BeginInit
         CType(Me.pic0000, System.ComponentModel.ISupportInitialize).BeginInit
@@ -1222,9 +1220,10 @@ Partial Class Form1
         CType(Me.pic0100, System.ComponentModel.ISupportInitialize).BeginInit
         Me.grpActions.SuspendLayout
         Me.grpIcons.SuspendLayout
-        CType(Me.picIconPermLeft, System.ComponentModel.ISupportInitialize).BeginInit
-        CType(Me.picIconPermRight, System.ComponentModel.ISupportInitialize).BeginInit
+        Me.grpCustom.SuspendLayout
         CType(Me.picIconPermY, System.ComponentModel.ISupportInitialize).BeginInit
+        CType(Me.picIconPermRight, System.ComponentModel.ISupportInitialize).BeginInit
+        CType(Me.picIconPermLeft, System.ComponentModel.ISupportInitialize).BeginInit
         CType(Me.picIconLayout, System.ComponentModel.ISupportInitialize).BeginInit
         CType(Me.picIconSignalSH01, System.ComponentModel.ISupportInitialize).BeginInit
         CType(Me.picIconStdRed, System.ComponentModel.ISupportInitialize).BeginInit
@@ -1281,7 +1280,6 @@ Partial Class Form1
         CType(Me.picIcons88CurveParallelOnOff, System.ComponentModel.ISupportInitialize).BeginInit
         Me.grpLayoutPages.SuspendLayout
         Me.grpMoveWindow.SuspendLayout
-        Me.grpCustom.SuspendLayout
         Me.SuspendLayout
         '
         'MenuStrip1
@@ -1303,37 +1301,37 @@ Partial Class Form1
         'NewLayoutToolStripMenuItem
         '
         Me.NewLayoutToolStripMenuItem.Name = "NewLayoutToolStripMenuItem"
-        Me.NewLayoutToolStripMenuItem.Size = New System.Drawing.Size(152, 22)
+        Me.NewLayoutToolStripMenuItem.Size = New System.Drawing.Size(180, 22)
         Me.NewLayoutToolStripMenuItem.Text = "New Layout..."
         '
         'OpenToolStripMenuItem
         '
         Me.OpenToolStripMenuItem.Name = "OpenToolStripMenuItem"
-        Me.OpenToolStripMenuItem.Size = New System.Drawing.Size(152, 22)
-        Me.OpenToolStripMenuItem.Text = "Open"
+        Me.OpenToolStripMenuItem.Size = New System.Drawing.Size(180, 22)
+        Me.OpenToolStripMenuItem.Text = "Open..."
         '
         'ReopenLastToolStripMenuItem
         '
         Me.ReopenLastToolStripMenuItem.Name = "ReopenLastToolStripMenuItem"
-        Me.ReopenLastToolStripMenuItem.Size = New System.Drawing.Size(152, 22)
+        Me.ReopenLastToolStripMenuItem.Size = New System.Drawing.Size(180, 22)
         Me.ReopenLastToolStripMenuItem.Text = "Reopen last"
         '
         'SaveToolStripMenuItem
         '
         Me.SaveToolStripMenuItem.Name = "SaveToolStripMenuItem"
-        Me.SaveToolStripMenuItem.Size = New System.Drawing.Size(152, 22)
+        Me.SaveToolStripMenuItem.Size = New System.Drawing.Size(180, 22)
         Me.SaveToolStripMenuItem.Text = "Save"
         '
         'SaveAsToolStripMenuItem
         '
         Me.SaveAsToolStripMenuItem.Name = "SaveAsToolStripMenuItem"
-        Me.SaveAsToolStripMenuItem.Size = New System.Drawing.Size(152, 22)
-        Me.SaveAsToolStripMenuItem.Text = "Save a Copy as"
+        Me.SaveAsToolStripMenuItem.Size = New System.Drawing.Size(180, 22)
+        Me.SaveAsToolStripMenuItem.Text = "Save a Copy as..."
         '
         'ExitToolStripMenuItem
         '
         Me.ExitToolStripMenuItem.Name = "ExitToolStripMenuItem"
-        Me.ExitToolStripMenuItem.Size = New System.Drawing.Size(152, 22)
+        Me.ExitToolStripMenuItem.Size = New System.Drawing.Size(180, 22)
         Me.ExitToolStripMenuItem.Text = "Exit"
         '
         'ToolsToolStripMenuItem
@@ -7160,15 +7158,28 @@ Partial Class Form1
         Me.grpIcons.TabStop = False
         Me.grpIcons.Text = "Insert Elements"
         '
-        'picIconPermLeft
+        'grpCustom
         '
-        Me.picIconPermLeft.BackColor = System.Drawing.Color.White
-        Me.picIconPermLeft.Image = CType(resources.GetObject("picIconPermLeft.Image"), System.Drawing.Image)
-        Me.picIconPermLeft.Location = New System.Drawing.Point(52, 15)
-        Me.picIconPermLeft.Name = "picIconPermLeft"
-        Me.picIconPermLeft.Size = New System.Drawing.Size(30, 30)
-        Me.picIconPermLeft.TabIndex = 517
-        Me.picIconPermLeft.TabStop = False
+        Me.grpCustom.BackColor = System.Drawing.Color.FromArgb(CType(CType(255, Byte), Integer), CType(CType(192, Byte), Integer), CType(CType(192, Byte), Integer))
+        Me.grpCustom.Controls.Add(Me.picIconPermY)
+        Me.grpCustom.Controls.Add(Me.picIconPermRight)
+        Me.grpCustom.Controls.Add(Me.picIconPermLeft)
+        Me.grpCustom.Location = New System.Drawing.Point(9, 271)
+        Me.grpCustom.Name = "grpCustom"
+        Me.grpCustom.Size = New System.Drawing.Size(168, 51)
+        Me.grpCustom.TabIndex = 518
+        Me.grpCustom.TabStop = False
+        Me.grpCustom.Text = "Building Blocks for Crossings"
+        '
+        'picIconPermY
+        '
+        Me.picIconPermY.BackColor = System.Drawing.Color.White
+        Me.picIconPermY.Image = CType(resources.GetObject("picIconPermY.Image"), System.Drawing.Image)
+        Me.picIconPermY.Location = New System.Drawing.Point(16, 15)
+        Me.picIconPermY.Name = "picIconPermY"
+        Me.picIconPermY.Size = New System.Drawing.Size(30, 30)
+        Me.picIconPermY.TabIndex = 514
+        Me.picIconPermY.TabStop = False
         '
         'picIconPermRight
         '
@@ -7180,15 +7191,15 @@ Partial Class Form1
         Me.picIconPermRight.TabIndex = 516
         Me.picIconPermRight.TabStop = False
         '
-        'picIconPermY
+        'picIconPermLeft
         '
-        Me.picIconPermY.BackColor = System.Drawing.Color.White
-        Me.picIconPermY.Image = CType(resources.GetObject("picIconPermY.Image"), System.Drawing.Image)
-        Me.picIconPermY.Location = New System.Drawing.Point(16, 15)
-        Me.picIconPermY.Name = "picIconPermY"
-        Me.picIconPermY.Size = New System.Drawing.Size(30, 30)
-        Me.picIconPermY.TabIndex = 514
-        Me.picIconPermY.TabStop = False
+        Me.picIconPermLeft.BackColor = System.Drawing.Color.White
+        Me.picIconPermLeft.Image = CType(resources.GetObject("picIconPermLeft.Image"), System.Drawing.Image)
+        Me.picIconPermLeft.Location = New System.Drawing.Point(52, 15)
+        Me.picIconPermLeft.Name = "picIconPermLeft"
+        Me.picIconPermLeft.Size = New System.Drawing.Size(30, 30)
+        Me.picIconPermLeft.TabIndex = 517
+        Me.picIconPermLeft.TabStop = False
         '
         'picIconLayout
         '
@@ -7578,7 +7589,7 @@ Partial Class Form1
         Me.btnDisplayRefreshEdit.Name = "btnDisplayRefreshEdit"
         Me.btnDisplayRefreshEdit.Size = New System.Drawing.Size(135, 22)
         Me.btnDisplayRefreshEdit.TabIndex = 510
-        Me.btnDisplayRefreshEdit.Text = "Hide Addresses/Texts"
+        Me.btnDisplayRefreshEdit.Text = "Show/Hide Addresses/Texts"
         Me.btnDisplayRefreshEdit.UseVisualStyleBackColor = False
         '
         'cmdEleementMove
@@ -7880,7 +7891,6 @@ Partial Class Form1
         'grpLayoutPages
         '
         Me.grpLayoutPages.Controls.Add(Me.cmdRevealAddressesPage)
-        Me.grpLayoutPages.Controls.Add(Me.cmdDisplayRefresh)
         Me.grpLayoutPages.Controls.Add(Me.cmdRevealTextPage)
         Me.grpLayoutPages.Controls.Add(Me.btnDuplicatePage)
         Me.grpLayoutPages.Controls.Add(Me.btnRenameLayoutPage)
@@ -7902,27 +7912,17 @@ Partial Class Form1
         Me.cmdRevealAddressesPage.Name = "cmdRevealAddressesPage"
         Me.cmdRevealAddressesPage.Size = New System.Drawing.Size(80, 22)
         Me.cmdRevealAddressesPage.TabIndex = 526
-        Me.cmdRevealAddressesPage.Text = "Reveal Addr"
+        Me.cmdRevealAddressesPage.Text = "Reveal/Hide Addresses"
         Me.cmdRevealAddressesPage.UseVisualStyleBackColor = False
-        '
-        'cmdDisplayRefresh
-        '
-        Me.cmdDisplayRefresh.BackColor = System.Drawing.SystemColors.ControlLight
-        Me.cmdDisplayRefresh.Location = New System.Drawing.Point(9, 157)
-        Me.cmdDisplayRefresh.Name = "cmdDisplayRefresh"
-        Me.cmdDisplayRefresh.Size = New System.Drawing.Size(122, 22)
-        Me.cmdDisplayRefresh.TabIndex = 528
-        Me.cmdDisplayRefresh.Text = "Hide Addresses/Texts"
-        Me.cmdDisplayRefresh.UseVisualStyleBackColor = False
         '
         'cmdRevealTextPage
         '
         Me.cmdRevealTextPage.BackColor = System.Drawing.SystemColors.ControlLight
-        Me.cmdRevealTextPage.Location = New System.Drawing.Point(121, 168)
+        Me.cmdRevealTextPage.Location = New System.Drawing.Point(84, 162)
         Me.cmdRevealTextPage.Name = "cmdRevealTextPage"
-        Me.cmdRevealTextPage.Size = New System.Drawing.Size(42, 22)
+        Me.cmdRevealTextPage.Size = New System.Drawing.Size(72, 22)
         Me.cmdRevealTextPage.TabIndex = 527
-        Me.cmdRevealTextPage.Text = "Text"
+        Me.cmdRevealTextPage.Text = "Reveal/Hide Text"
         Me.cmdRevealTextPage.UseVisualStyleBackColor = False
         '
         'btnDuplicatePage
@@ -7989,16 +7989,6 @@ Partial Class Form1
         Me.lstLayoutPages.Size = New System.Drawing.Size(100, 32)
         Me.lstLayoutPages.TabIndex = 520
         '
-        'cmdRevealAddressesRoute
-        '
-        Me.cmdRevealAddressesRoute.BackColor = System.Drawing.SystemColors.ControlLight
-        Me.cmdRevealAddressesRoute.Location = New System.Drawing.Point(133, 647)
-        Me.cmdRevealAddressesRoute.Name = "cmdRevealAddressesRoute"
-        Me.cmdRevealAddressesRoute.Size = New System.Drawing.Size(120, 22)
-        Me.cmdRevealAddressesRoute.TabIndex = 531
-        Me.cmdRevealAddressesRoute.Text = "Reveal Addresses"
-        Me.cmdRevealAddressesRoute.UseVisualStyleBackColor = False
-        '
         'grpMoveWindow
         '
         Me.grpMoveWindow.Controls.Add(Me.btnWindowReset)
@@ -8064,26 +8054,12 @@ Partial Class Form1
         Me.btnWindowMoveLeft.Text = "Left"
         Me.btnWindowMoveLeft.UseVisualStyleBackColor = False
         '
-        'grpCustom
-        '
-        Me.grpCustom.BackColor = System.Drawing.Color.FromArgb(CType(CType(128, Byte), Integer), CType(CType(255, Byte), Integer), CType(CType(255, Byte), Integer))
-        Me.grpCustom.Controls.Add(Me.picIconPermY)
-        Me.grpCustom.Controls.Add(Me.picIconPermRight)
-        Me.grpCustom.Controls.Add(Me.picIconPermLeft)
-        Me.grpCustom.Location = New System.Drawing.Point(9, 271)
-        Me.grpCustom.Name = "grpCustom"
-        Me.grpCustom.Size = New System.Drawing.Size(168, 51)
-        Me.grpCustom.TabIndex = 518
-        Me.grpCustom.TabStop = False
-        Me.grpCustom.Text = "Building Blocks for Crossings"
-        '
         'Form1
         '
         Me.AutoScaleDimensions = New System.Drawing.SizeF(6.0!, 13.0!)
         Me.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font
         Me.ClientSize = New System.Drawing.Size(1277, 787)
         Me.Controls.Add(Me.grpMoveWindow)
-        Me.Controls.Add(Me.cmdRevealAddressesRoute)
         Me.Controls.Add(Me.grpLayoutPages)
         Me.Controls.Add(Me.picIcons88CurveParallelOnOff)
         Me.Controls.Add(Me.picIcons88CurveParallelOffOn)
@@ -8638,9 +8614,10 @@ Partial Class Form1
         CType(Me.pic0100, System.ComponentModel.ISupportInitialize).EndInit
         Me.grpActions.ResumeLayout(False)
         Me.grpIcons.ResumeLayout(False)
-        CType(Me.picIconPermLeft, System.ComponentModel.ISupportInitialize).EndInit
-        CType(Me.picIconPermRight, System.ComponentModel.ISupportInitialize).EndInit
+        Me.grpCustom.ResumeLayout(False)
         CType(Me.picIconPermY, System.ComponentModel.ISupportInitialize).EndInit
+        CType(Me.picIconPermRight, System.ComponentModel.ISupportInitialize).EndInit
+        CType(Me.picIconPermLeft, System.ComponentModel.ISupportInitialize).EndInit
         CType(Me.picIconLayout, System.ComponentModel.ISupportInitialize).EndInit
         CType(Me.picIconSignalSH01, System.ComponentModel.ISupportInitialize).EndInit
         CType(Me.picIconStdRed, System.ComponentModel.ISupportInitialize).EndInit
@@ -8698,7 +8675,6 @@ Partial Class Form1
         Me.grpLayoutPages.ResumeLayout(False)
         Me.grpLayoutPages.PerformLayout
         Me.grpMoveWindow.ResumeLayout(False)
-        Me.grpCustom.ResumeLayout(False)
         Me.ResumeLayout(False)
         Me.PerformLayout
 
@@ -9322,10 +9298,8 @@ Partial Class Form1
     Friend WithEvents ShowInputFileToolStripMenuItem As ToolStripMenuItem
     Friend WithEvents cmdRevealAddressesPage As Button
     Friend WithEvents cmdReturnToTC As Button
-    Friend WithEvents cmdRevealAddressesRoute As Button
     Friend WithEvents picIconLayout As PictureBox
     Friend WithEvents cmdRevealTextPage As Button
-    Friend WithEvents cmdDisplayRefresh As Button
     Friend WithEvents btnDisplayRefreshEdit As Button
     Friend WithEvents grpMoveWindow As GroupBox
     Friend WithEvents btnWindowMoveDown As Button
