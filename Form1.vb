@@ -3467,7 +3467,29 @@ write_error:
                         EDIT_CHANGES = True
                     ElseIf el.typ_s <> "" Then ' allow for text in non-text objects - like CS2 allows for
                         s = el.text
-                        el.text = RTrim(InputBox("Enter text", "Text", el.text)) ' 231022 Trim() replaced with RTrim
+
+
+                        ' Show the custom input dialog
+                        Dim inputForm As New CustomInputForm(s)
+                        Dim dialogResult As DialogResult = inputForm.ShowDialog()
+
+                        If dialogResult = dialogResult.Cancel Then
+                            ' User pressed Cancel
+                            ' MessageBox.Show("Cancel was pressed. Keeping the original text.", "Information", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                        Else
+                            Dim userInput As String = inputForm.InputTextBox.Text
+                            If userInput.Trim() = "" Then
+                                ' User clicked OK but left input blank
+                                el.text = userInput.TrimEnd()
+                                ' MessageBox.Show("Empty input detected. Keeping the original text.", "Information", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                            Else
+                                ' Update the text
+                                el.text = userInput.TrimEnd()
+                            End If
+                        End If
+
+
+                        ' el.text = RTrim(InputBox("Enter text", "Text", el.text)) ' 231022 Trim() replaced with RTrim
                         Elements(el.my_index) = el
                         Reveal_Text = True ' to counter that the user may have turned it off
                         Reveal_Addr = False
@@ -3541,6 +3563,50 @@ write_error:
             End Select
         End If
     End Sub
+
+    Public Class CustomInputForm
+        Inherits Form
+
+        Private WithEvents OKButton2 As Button
+        Private WithEvents CancelButton2 As Button
+        Public Property InputTextBox As TextBox
+
+        ' Constructor with a default value for the TextBox
+        Public Sub New(s As String)
+            ' Initialize controls
+            OKButton2 = New Button() With {.Text = "OK", .DialogResult = DialogResult.OK, .Top = 50, .Left = 30}
+            CancelButton2 = New Button() With {.Text = "Cancel", .DialogResult = DialogResult.Cancel, .Top = 50, .Left = 120}
+            InputTextBox = New TextBox() With {.Top = 10, .Left = 30, .Width = 200, .Text = s} ' Set default value
+
+            ' Add controls to the form
+            Me.Controls.Add(OKButton2)
+            Me.Controls.Add(CancelButton2)
+            Me.Controls.Add(InputTextBox)
+
+            ' Set up the form properties
+            Me.Text = "Custom Input"
+            Me.ClientSize = New Size(260, 120)
+
+            ' Center the form in the parent window
+            Me.StartPosition = FormStartPosition.CenterParent
+
+            ' Set Accept and Cancel buttons for the form
+            Me.AcceptButton = OKButton2
+            Me.CancelButton = CancelButton2
+        End Sub
+
+        Private Sub OKButton_Click(sender As Object, e As EventArgs) Handles OKButton2.Click
+            Me.DialogResult = DialogResult.OK
+            Me.Close()
+        End Sub
+
+        Private Sub CancelButton_Click(sender As Object, e As EventArgs) Handles CancelButton2.Click
+            Me.DialogResult = DialogResult.Cancel
+            Me.Close()
+        End Sub
+    End Class
+
+
     Private Sub picHover(picObject As Object)
         Dim picName As String = picObject.name
         '        Static picName_old As String
