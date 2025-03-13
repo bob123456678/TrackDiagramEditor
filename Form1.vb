@@ -3,9 +3,12 @@ Imports System.ComponentModel
 
 Public Class Form1
     ' CS2 Track Diagram Editor
-    Const Version = "Version 2.1.3" ' 2023-11-04
+    Const Version = "Version 2.2.2b" ' 2025-03-12
+    ' 2.2.2:          Changed how deletion of text works
+    ' 2.2.1:          Inproved display of text in connection with linksweiche og rechtsweiche
+    ' 2.1.x -> 2.2.x: Two track diagrams can be combined into one. Report of digital addresses in sue can be provided.
     ' 2.0.1 -> 2.1.x: A track diagram can span 255 rows and 255 colums rather than just 17 x 30. The limit of 255 is imposed by Märklin's file format.
-    '             .3: Display of addresses and text after edit reworked.
+    '             .3: Display of addresses and text reworked to use event handler.
     ' 2.0   -> 2.0.1: pfeil address entry bug fix. Allow for leading spaces in texts. Doesn't place window as topmost.
     '  d Work-around fix for display of text and addresses after editing
     '  b Backup of deleted pages. Still to do: A mechanism for adding such pages back into the (or a) layout
@@ -41,11 +44,12 @@ Public Class Form1
     ' track diagram window position
     Dim Row_Offset As Integer, Col_Offset As Integer ' position of upper left corner of the grid
 
-    Dim Test_Level As Integer ' >=3: displays the input file, >=4 displays the output file as well
+    Dim Test_Level As Integer  ' >=3: displays the input file, >=4 displays the output file as well
 
-    Dim MODE As String = "View" ' "View" or "Edit" or "Routes" 
+    Shared MODE As String = "View" ' "View" or "Edit" or "Routes" or "Join"
     Dim ROUTE_VIEW_ENABLED As Boolean = False ' This mode is only of interest to, and available for, layouts created by a cs2 and
     ' requires the route file ("fahrstrassen.cs2") to be availabe
+
     Dim Use_English_Terms As Boolean = True ' set or cleared in tools menu
     Dim Verbose As Boolean = False ' set in tools menu
     Dim Reveal_Text As Boolean = False
@@ -58,10 +62,10 @@ Public Class Form1
     Dim Current_Directory As String
     Dim TrackDiagram_Directory As String ' where the track diagram files reside. Per Märklin should be named ...\gleisbilder
 
-    Dim TrackDiagram_Input_Filename As String ' most recent track diagram that was loaded
-    Dim MasterFile_Directory As String ' where gleisbild.cs2 and fahrstrassen.cs2 resides, if those files are present
+    Shared TrackDiagram_Input_Filename As String ' most recent track diagram that was loaded
+    Shared MasterFile_Directory As String ' where gleisbild.cs2 and fahrstrassen.cs2 resides, if those files are present
     Dim Flat_Structure As Boolean = False ' False if Märklin's folder structure is adhered to. Refer the comment at the top of this file.
-    Dim STAND_ALONE As Boolean = True ' False if the editor is run from a command line. This is the case when the editor is activated from the train control program "TC"
+    Shared STAND_ALONE As Boolean = True ' False if the editor is run from a command line. This is the case when the editor is activated from the train control program "TC"
     Dim CMDLINE_MODE As String = "" ' "Edit" if run from command line, otherwise "". Future versions may allow more options
     Dim Cmdline_Param1 As String
     Dim Cmdline_Param2 As String
@@ -95,8 +99,8 @@ Public Class Form1
     End Structure
 
     Const E_MAX = 1000 ' We can have at most E_MAX elements (gerade, bogen, ..., etc.). This an arbitrary limit. Increase as needed.
-    Dim E_TOP As Integer ' Number of elements in track diagram (= index of last ELEMENT stored in Elements(*).
-    Dim Elements(E_MAX) As ELEMENT
+    Shared E_TOP As Integer ' Number of elements in track diagram (= index of last ELEMENT stored in Elements(*).
+    Shared Elements(E_MAX) As ELEMENT
     Dim Empty_Element As ELEMENT = New ELEMENT
 
     ' Temporary storage of elements prior to editing - allows us to revert and cancel edits 
@@ -106,18 +110,19 @@ Public Class Form1
     Dim Page_No As Integer ' the page (tab) in CS2 or TC counting from 0 with the track diagram. This value is encoded in the ID of the elements
 
     Dim Developer_Environment As Boolean = False ' Is set to True in Form1_Load if we're running in the development environment
-    Public CHANGED As Boolean, EDIT_CHANGES As Boolean
+    Public Shared CHANGED As Boolean
+    Public EDIT_CHANGES As Boolean
 
     Public env1 As New EnvironmentHandler3
 
     ' The below is for drawing addresses and other text on the track diagram
-    Dim Brush_black As Brush = New Drawing.SolidBrush(Color.Black)
-    Dim Brush_blue As Brush = New Drawing.SolidBrush(Color.Blue)
-    Dim Brush_red As Brush = New Drawing.SolidBrush(Color.Red)
-    Dim Brush_yellow As Brush = New Drawing.SolidBrush(Color.Yellow)
-    Dim Brush_white As Brush = New Drawing.SolidBrush(Color.White)
+    ReadOnly Brush_black As Brush = New Drawing.SolidBrush(Color.Black)
+    ReadOnly Brush_blue As Brush = New Drawing.SolidBrush(Color.Blue)
+    ReadOnly Brush_red As Brush = New Drawing.SolidBrush(Color.Red)
+    ReadOnly Brush_yellow As Brush = New Drawing.SolidBrush(Color.Yellow)
+    ReadOnly Brush_white As Brush = New Drawing.SolidBrush(Color.White)
 
-    Dim myFont As Font = New System.Drawing.Font(“Verdana”, 8)
+    ReadOnly myFont As Font = New System.Drawing.Font(“Verdana”, 8)
     Dim drawFormatVertical = New StringFormat()
 
     Class RouteHandler
@@ -255,7 +260,7 @@ Public Class Form1
 route_read_error:
             On Error GoTo 0
             FileClose(fno)
-            MsgBox("Cannot read the route file " & fn & ".  (m02)")
+            MsgBox("Cannot read the route file " & fn)
             R_Top = 0
             Return False
         End Function
@@ -559,7 +564,7 @@ route_read_error:
                 On Error GoTo 0
                 FileClose(fno)
                 Form1.Message(1, "Page file loaded: """ & fn & """")
-                Form1.Message(2, "No. of lines in page file" & Str(Form1.lstMasterFile.Items.Count))
+                Form1.Message(2, "  No. of lines in page file" & Str(Form1.lstMasterFile.Items.Count))
             Else
                 Form1.Message(1, "Could not locate CS2 layout map ""gleisbild"". (m21)")
                 On Error GoTo 0
@@ -741,11 +746,228 @@ MF_Write_Error:
                 Form1.lstLayoutPages.SelectedIndex = Form1.Page_No
             End If
         End Sub
-
     End Class
 
+    Class CombinePagesHandler
+        Private Combine_Pages(2) As String ' name of the pages to combine
+        Private Combine_Files(2) As String ' corresponding file names
+        Private Combined_Page_Name As String = "" ' name of tje new page
+        Private Combined_File_Name As String = "" ' name of tje new page
+        Public Sub Initiate()
+            Dim answer As DialogResult, current_page_name As String, new_page_name As String, c As String
+            Combined_Page_Name = ""
+            Combine_Pages(1) = ""
+            Combine_Pages(2) = ""
+
+            If CHANGED Then
+                current_page_name = FilenameProper(TrackDiagram_Input_Filename)
+                If STAND_ALONE Then answer = MsgBox("Track diagram """ & current_page_name & """ has been modified but not saved. Should changes be saved?", vbYesNo)
+                If answer = vbYes Or Not STAND_ALONE Then
+                    If Form1.GleisbildSave() Then
+                        If STAND_ALONE Then Form1.Message("Track diagram saved in: " & TrackDiagram_Input_Filename)
+                    Else
+                        MsgBox("Page could not be saved: " & FilenameNoExtension(FilenameExtract(TrackDiagram_Input_Filename)))
+                        If STAND_ALONE Then Form1.Message("to folder " & FilenamePath(TrackDiagram_Input_Filename))
+                    End If
+                End If
+            End If
+
+            new_page_name = InputBox("Name of the new page", "Page name", "")
+
+            If new_page_name <> "" Then
+                If new_page_name = "gleisbild" Or new_page_name = "fahrstrassen" Then
+                    MsgBox("The name """ & new_page_name & """ cannot be used as a name for a track diagram")
+                    Exit Sub
+                End If
+
+                If PFH.LayoutPageNumberGet(new_page_name) <> -1 Then
+                    MsgBox("Page name already in use. Operation cancelled")
+                    Exit Sub
+                End If
+
+                c = ValidateFileName(new_page_name)
+                If c <> "" Then
+                    MsgBox("Unwanted character in page name: '" & c & "'. Operation cancelled")
+                    Exit Sub
+                End If
+
+                ' We're good to continue
+                MODE = "Join"
+                Combined_Page_Name = new_page_name
+                Combined_File_Name = MasterFile_Directory & "gleisbilder\" & new_page_name & ".cs2"
+
+                Form1.cmdCancel.Text = "Cancel"
+                Form1.AdjustPage()
+                Form1.GleisBildDisplayClear()
+                Form1.lstLayoutPages.SelectedIndex = -1
+                Form1.txtCombine.Text = "Click in the box above on the two track diagrams to combine." & vbCrLf & vbCrLf &
+                "Each of the two diagrams must have exactly one arrow element. The tracks will be joined as indicated by the arrow elements."
+                Form1.txtCombine.Visible = True ' The instructions as to what to do next
+            End If
+        End Sub
+        Public Sub PageSelected(page_name As String, file_name As String)
+            If Combine_Pages(1) = "" Then
+                Combine_Pages(1) = page_name
+                Combine_Files(1) = file_name
+            Else
+                Combine_Pages(2) = page_name
+                Combine_Files(2) = file_name
+                Form1.txtCombine.Visible = False
+                CombinePages()
+            End If
+        End Sub
+        Private Sub CombinePages()
+            Dim joining_point_index(2) As Integer ' index into elements of the pfeil joining points
+            Dim r(3) As Integer, c(3) As Integer ' (1) and (2) : the location of pfeil. (3) location where they initially should be moved to to ensure
+            Dim rm(2) As Integer, cm(2) As Integer ' vectors indicating how to reposition the two diagrams so that they will match
+            Dim combined_page_no As Integer, el As ELEMENT, s As String
+            ' that the combined diagram stays within bounds
+            Dim direction(2) As Integer ' the direction of the joining point
+            Dim i As Integer
+
+            For i = 1 To 2
+                joining_point_index(i) = LocateJoiningPoint(i) ' side effect: loads the track diagram
+                Select Case joining_point_index(i)
+                    Case -1 : OperationFailed("Page """ & Combine_Pages(i) & """ has no arrow element. Pages were not combined", 1)
+                        Exit Sub
+                    Case -2 : OperationFailed("Page """ & Combine_Pages(i) & """ has multiple arrow elements. Pages were not combined", 2)
+                        Exit Sub
+                End Select
+                direction(i) = Elements(joining_point_index(i)).drehung_i
+                r(i) = Elements(joining_point_index(i)).row_no
+                c(i) = Elements(joining_point_index(i)).col_no
+            Next i
+
+            ' check that the joining points match, i.e. points at each other
+            If direction(1) <> ((direction(2) + 2) Mod 4) Then
+                OperationFailed("The joining points of the two track diagrams do not match", 1)
+                Exit Sub
+            End If
+
+            ' calculate the new, common joining point
+            r(3) = Math.Max(r(1), r(2))
+            c(3) = Math.Max(c(1), c(2))
+
+            ' calculate the move vectors
+            rm(1) = r(3) - r(1) : cm(1) = c(3) - c(1)
+            rm(2) = r(3) - r(2) : cm(2) = c(3) - c(2)
+            ' adjust and close the gap where the pfeil elements are
+            If direction(1) = 0 Then
+                cm(1) = cm(1) + 1
+            ElseIf direction(1) = 3 Then
+                rm(1) = rm(1) + 1
+            End If
+            If direction(2) = 0 Then
+                cm(2) = cm(2) + 1
+            ElseIf direction(2) = 3 Then
+                rm(2) = rm(2) + 1
+            End If
+
+            ' duplicate the first page
+            combined_page_no = PFH.NextAvailablePageNumber
+            Form1.GleisbildLoad(Combine_Files(1))
+            'fix the page number
+            Form1.ElementsRepaginate(combined_page_no)
+            Form1.Page_No = combined_page_no
+            TrackDiagram_Input_Filename = Combined_File_Name
+
+            ' move the elements
+            For i = 1 To E_TOP
+                el = Elements(i)
+                If el.typ_s = "pfeil" Then
+                    If i = E_TOP Then
+                        E_TOP = E_TOP - 1
+                        Exit For
+                    Else
+                        Elements(i) = Elements(E_TOP)
+                        E_TOP = E_TOP - 1
+                        el = Elements(i)
+                    End If
+                End If
+                    el.row_no = el.row_no + rm(1)
+                el.col_no = el.col_no + cm(1)
+                s = Form1.DecIntToHexStr(combined_page_no) & Form1.DecIntToHexStr(el.row_no) & Form1.DecIntToHexStr(el.col_no)
+                el.id_normalized = s
+                el.id = Form1.CS2_id_create(combined_page_no, el.row_no, el.col_no)
+                Elements(i) = el
+            Next
+
+            ' save the new file
+            If Not Form1.GleisbildSave() Then
+                ' switch back to the original file and reload it to get the page number in order
+                OperationFailed("New page was not created due to error when writing the copy to disk", 1)
+            Else
+                ' Update the page file
+                PFH.PageAdd(Combined_File_Name)
+                PFH.PageFileSave()
+            End If
+
+            ' process the second page
+            Form1.GleisbildLoad(Combine_Files(2))
+            'fix the page number
+            Form1.ElementsRepaginate(combined_page_no)
+            ' move the elements and remove the pfeil
+            For i = 1 To E_TOP
+                el = Elements(i)
+                If el.typ_s = "pfeil" Then
+                    If i = E_TOP Then
+                        E_TOP = E_TOP - 1
+                        Exit For
+                    Else
+                        Elements(i) = Elements(E_TOP)
+                        E_TOP = E_TOP - 1
+                        el = Elements(i)
+                    End If
+                End If
+                el.row_no = el.row_no + rm(2)
+                el.col_no = el.col_no + cm(2)
+                s = Form1.DecIntToHexStr(combined_page_no) & Form1.DecIntToHexStr(el.row_no) & Form1.DecIntToHexStr(el.col_no)
+                el.id_normalized = s
+                el.id = Form1.CS2_id_create(combined_page_no, el.row_no, el.col_no)
+                Elements(i) = el
+            Next
+
+            ' Append to the previous file
+            If Not Form1.GleisbildWriteAppendToFile(Combined_File_Name) Then
+                ' switch back to the original file and reload it to get the page number in order
+                OperationFailed("New page was only created in part due to some error when writing to disk", 1)
+            Else
+                MODE = "View"
+                Form1.GleisbildLoad(Combined_File_Name)
+                Form1.ElementsSort()
+                Form1.GleisbildSave() ' save the sorted file
+                Form1.GleisbildDisplay()
+                Form1.AdjustPage()
+            End If
+        End Sub
+        Private Function LocateJoiningPoint(i As Integer) As Integer
+            ' Checks that one and only one joining point (pfeil element) is present, and returns the index into Elements of said element. Returns -1 if 
+            ' no joining point and -2 if multiple joining points
+            Dim e As Integer, n As Integer, e_joining_point As Integer
+            Form1.GleisbildLoad(Combine_Files(i))
+            For e = 1 To E_TOP
+                If Elements(e).typ_s = "pfeil" Then
+                    e_joining_point = e
+                    n = n + 1
+                End If
+            Next
+            Select Case n
+                Case 0 : Return -1
+                Case 1 : Return e_joining_point
+                Case Else : Return -2
+            End Select
+        End Function
+        Private Sub OperationFailed(msg As String, indx As Integer)
+            If msg <> "" Then MsgBox(msg)
+            MODE = "Wiev"
+            Form1.GleisbildLoad(Combine_Files(indx))
+            Form1.GleisbildDisplay()
+            Form1.AdjustPage()
+        End Sub
+    End Class
     ReadOnly RH As New RouteHandler
-    ReadOnly PFH As New PageFileHandler
+    Shared ReadOnly PFH As New PageFileHandler
+    ReadOnly CPH As New CombinePagesHandler
 
     Private Sub AdjustPage()
         Static not_first_call As Boolean = False
@@ -777,112 +999,88 @@ MF_Write_Error:
             End If
         End If
 
-        If Developer_Environment Then Message("me.width=" & Str(Me.Width) & ", me.height=" & Str(Me.Height))
+        Message(1, "Adjust page, mode=" & MODE & ", E_Top=" & Format(E_TOP))
+        ' If Developer_Environment Then Message("me.width=" & Str(Me.Width) & ", me.height=" & Str(Me.Height))
 
         H_eff = H - 3 * delta ' adjusting for the menu bar
 
-        grpLayout.Left = delta
-        grpLayout.Top = H - H_eff
-        grpLayout.Height = (ROW_MAX + 1) * 30 + lblC00.Height + 2 * delta
-        grpLayout.Width = (COL_MAX + 1) * 30 + 16 + delta
+        ' Only two UI object have to be resized when the window changes: lstMessage and lstMasterFile
+        ' Therefore all other size adjustments and posiitoning are only done once.
+        ' Object visibility is updated on each call depending on the valye of Mode
 
-        lstMessage.Height = H_eff - grpLayout.Height - 5 * delta
-        lstMessage.Top = grpLayout.Top + grpLayout.Height + delta
-        lstMessage.Width = grpLayout.Width - grpMoveWindow.Width - delta
+        If Not not_first_call Then
+            not_first_call = True
+            grpLayout.Left = delta
+            grpLayout.Top = H - H_eff
+            grpLayout.Height = (ROW_MAX + 1) * 30 + lblC00.Height + 2 * delta
+            grpLayout.Width = (COL_MAX + 1) * 30 + 16 + delta
 
-        grpMoveWindow.Top = lstMessage.Top
-        grpMoveWindow.Left = lstMessage.Left + lstMessage.Width + delta
+            lstMessage.Top = grpLayout.Top + grpLayout.Height + delta
+            lstMessage.Width = grpLayout.Width - grpMoveWindow.Width - delta
+            grpMoveWindow.Top = lstMessage.Top
+            grpMoveWindow.Left = lstMessage.Left + lstMessage.Width + delta
 
-        grpIcons.Top = grpLayout.Top
-        grpIcons.Visible = (MODE = "Edit")
+            grpIcons.Top = grpLayout.Top
 
-        lstProperties.Visible = (MODE = "View")
-        lstProperties.Top = H - H_eff
-        lstProperties.Left = grpLayout.Left + grpLayout.Width + delta
-        lstProperties.Height = grpLayout.Height * 0.4
-        lstProperties.Width = grpIcons.Width
+            lstProperties.Top = H - H_eff
+            lstProperties.Left = grpLayout.Left + grpLayout.Width + delta
+            lstProperties.Height = grpLayout.Height * 0.4
+            lstProperties.Width = grpIcons.Width
 
+            grpEditActions.Top = grpIcons.Top + grpIcons.Height
+            grpEditActions.Left = grpIcons.Left
+            grpEditActions.Width = grpIcons.Width
 
-        grpEditActions.Top = grpIcons.Top + grpIcons.Height
-        grpEditActions.Left = grpIcons.Left
-        grpEditActions.Width = grpIcons.Width
-        grpEditActions.Visible = (MODE = "Edit")
+            cmdAddressEdit.Width = grpEditActions.Width - 2 * cmdAddressEdit.Left
+            cmdTextEdit.Width = cmdAddressEdit.Width
+            btnDisplayRefreshEdit.Width = cmdAddressEdit.Width
 
-        cmdAddressEdit.Width = grpEditActions.Width - 2 * cmdAddressEdit.Left
-        cmdTextEdit.Width = cmdAddressEdit.Width
-        btnDisplayRefreshEdit.Width = cmdAddressEdit.Width
+            grpActions.Top = grpEditActions.Top + grpEditActions.Height
+            grpActions.Height = 3 * cmdCommit.Height + 2 * delta
+            grpActions.Left = lstProperties.Left
+            grpActions.Width = lstProperties.Width
 
-        grpActions.Top = grpEditActions.Top + grpEditActions.Height
-        grpActions.Height = 3 * cmdCommit.Height + 2 * delta
-        grpActions.Left = lstProperties.Left
-        grpActions.Width = lstProperties.Width
-        grpActions.Visible = FILE_LOADED
+            ' lstInput visibility is set in tools menu
+            lstInput.Top = lstProperties.Top + lstProperties.Height + delta
+            lstInput.Height = grpActions.Top - (lstProperties.Top + lstProperties.Height) - delta
+            lstInput.Left = lstProperties.Left
+            lstInput.Width = lstProperties.Width
 
-        grpMoveWindow.Visible = FILE_LOADED
+            lstOutput.Top = lstInput.Top
+            lstOutput.Height = lstInput.Height
+            lstOutput.Left = lstInput.Left - lstOutput.Width - delta
 
-        ' lstInput visibility is set in tools menu
-        lstInput.Top = lstProperties.Top + lstProperties.Height + delta
-        lstInput.Height = grpActions.Top - (lstProperties.Top + lstProperties.Height) - delta
-        lstInput.Left = lstProperties.Left
-        lstInput.Width = lstProperties.Width
+            cmdCommit.Top = cmdEdit.Top
+            cmdCommit.Left = cmdEdit.Left
+            cmdCancel.Top = cmdCommit.Top + cmdCommit.Height
+            cmdCancel.Left = cmdCommit.Left ' + cmdCommit.Width + delta
 
-        lstOutput.Visible = False
-        lstOutput.Top = lstInput.Top
-        lstOutput.Height = lstInput.Height
-        lstOutput.Left = lstInput.Left - lstOutput.Width - delta
+            If Not STAND_ALONE Then
+                cmdCommit.Width = 135
+                cmdCommit.Text = "Commit and Return to TC"
+                cmdCancel.Width = 135
+                cmdCancel.Text = "Cancel and Return to TC"
+            End If
 
-        cmdCommit.Top = cmdEdit.Top
-        cmdCommit.Left = cmdEdit.Left
-        cmdCancel.Top = cmdCommit.Top + cmdCommit.Height
-        cmdCancel.Left = cmdCommit.Left ' + cmdCommit.Width + delta
-        cmdEdit.Visible = (MODE = "View")
-        cmdCancel.Visible = (MODE = "Edit" Or MODE = "Routes")
-        cmdCommit.Visible = (MODE = "Edit")
-        If Not STAND_ALONE Then
-            cmdCommit.Width = 135
-            cmdCommit.Text = "Commit and Return to TC"
-            cmdCancel.Width = 135
-            cmdCancel.Text = "Cancel and Return to TC"
-        End If
+            cmdReturnToTC.Left = cmdCommit.Left
+            cmdReturnToTC.Top = cmdEdit.Top + cmdEdit.Height  ' + delta
 
-        cmdReturnToTC.Visible = (MODE = "View") And Not STAND_ALONE
-        cmdReturnToTC.Left = cmdCommit.Left
-        cmdReturnToTC.Top = cmdEdit.Top + cmdEdit.Height  ' + delta
+            cmdRoutesView.Left = cmdEdit.Left
+            cmdRoutesView.Top = cmdReturnToTC.Top + cmdReturnToTC.Height ' + delta ' cmdEdit.Top
 
-        cmdRoutesView.Left = cmdEdit.Left
-        cmdRoutesView.Top = cmdReturnToTC.Top + cmdReturnToTC.Height ' + delta ' cmdEdit.Top
-        cmdRoutesView.Visible = (MODE = "View" And ROUTE_VIEW_ENABLED)
+            cmdManagePages.Left = cmdCommit.Left
+            cmdManagePages.Top = cmdReturnToTC.Top + cmdReturnToTC.Height
+            cboRouteNames.Left = lstProperties.Left
+            cboRouteNames.Top = lstProperties.Top
+            cboRouteNames.Width = lstProperties.Width
 
-        cmdManagePages.Left = cmdCommit.Left
-        cmdManagePages.Top = cmdReturnToTC.Top + cmdReturnToTC.Height
-        cmdManagePages.Visible = (MODE = "Edit") And Not STAND_ALONE
+            lstRoutes.Left = lstProperties.Left
+            lstRoutes.Top = lstInput.Top
+            lstRoutes.Height = lstInput.Height - delta
+            lstRoutes.Width = lstProperties.Width
 
-        cboRouteNames.Left = lstProperties.Left
-        cboRouteNames.Top = lstProperties.Top
-        cboRouteNames.Width = lstProperties.Width
-        cboRouteNames.Visible = (MODE = "Routes")
-
-        lstRoutes.Left = lstProperties.Left
-        lstRoutes.Top = lstInput.Top
-        lstRoutes.Height = lstInput.Height - delta
-        lstRoutes.Width = lstProperties.Width
-        lstRoutes.Visible = (MODE = "Routes")
-
-        lstMasterFile.Width = 1.5 * lstRoutes.Width ' only used for debugging. Not visible to user
-        lstMasterFile.Width = 1.5 * lstRoutes.Width
-        lstMasterFile.Height = (lstMessage.Top + lstMessage.Height) - lstMasterFile.Top
-        lstMasterFile.Visible = Developer_Environment
-
-        ShowInputFileToolStripMenuItem.Visible = Developer_Environment Or Verbose
-        ShowOutputFileToolStripMenuItem.Visible = Developer_Environment
-        ConsistencyCheckToolStripMenuItem.Visible = Developer_Environment
-        DumpElementsToolStripMenuItem.Visible = Developer_Environment
-        SetTestLevelToolStripMenuItem.Visible = Developer_Environment
-        StatusVariablesToolStripMenuItem.Visible = Developer_Environment
-        TurnOffDeveloperModeToolStripMenuItem.Visible = Developer_Environment
-
-        grpLayoutPages.Visible = (MODE = "View") And FILE_LOADED And Not lstInput.Visible
-        If MODE = "View" And Not not_first_call Then
+            lstMasterFile.Width = 1.5 * lstRoutes.Width ' only used for debugging. Not visible to user
+            lstMasterFile.Width = 1.5 * lstRoutes.Width
             grpLayoutPages.Top = lstProperties.Top + lstProperties.Height
             grpLayoutPages.Left = lstProperties.Left
             grpLayoutPages.Width = lstProperties.Width
@@ -894,7 +1092,9 @@ MF_Write_Error:
             btnAddLayoutPage.Width = grpLayoutPages.Width - 2 * btnAddLayoutPage.Left
             btnDuplicatePage.Top = btnAddLayoutPage.Top + btnAddLayoutPage.Height
             btnDuplicatePage.Width = btnAddLayoutPage.Width
-            btnRenameLayoutPage.Top = btnDuplicatePage.Top + btnDuplicatePage.Height
+            btnCombinePages.Top = btnDuplicatePage.Top + btnDuplicatePage.Height
+            btnCombinePages.Width = btnAddLayoutPage.Width
+            btnRenameLayoutPage.Top = btnCombinePages.Top + btnCombinePages.Height
             btnRenameLayoutPage.Width = btnAddLayoutPage.Width
             btnRemoveLayoutPage.Top = btnRenameLayoutPage.Top + btnRenameLayoutPage.Height
             btnRemoveLayoutPage.Width = btnAddLayoutPage.Width
@@ -903,10 +1103,57 @@ MF_Write_Error:
             cmdRevealTextPage.Top = cmdRevealAddressesPage.Top + cmdRevealAddressesPage.Height
             cmdRevealTextPage.Left = cmdRevealAddressesPage.Left
             cmdRevealTextPage.Width = cmdRevealAddressesPage.Width
+            txtCombine.Top = btnAddLayoutPage.Top
+            txtCombine.Left = btnAddLayoutPage.Left
+            txtCombine.Width = btnAddLayoutPage.Width
+            txtCombine.Height = cmdRevealTextPage.Top - btnAddLayoutPage.Top + cmdRevealTextPage.Height
+
         End If
 
+        lstMessage.Height = H_eff - grpLayout.Height - 5 * delta
+        lstMasterFile.Height = (lstMessage.Top + lstMessage.Height) - lstMasterFile.Top
+
+        grpActions.Visible = FILE_LOADED
+        grpMoveWindow.Visible = FILE_LOADED
+
+        lstProperties.Visible = (MODE = "View")
+        cmdEdit.Visible = (MODE = "View")
+        cmdReturnToTC.Visible = (MODE = "View") And Not STAND_ALONE
+        cmdRoutesView.Visible = (MODE = "View" And ROUTE_VIEW_ENABLED)
+        grpLayoutPages.Visible = ((MODE = "View") Or (MODE = "Join")) And FILE_LOADED And Not lstInput.Visible
+
+        grpIcons.Visible = (MODE = "Edit")
+        grpEditActions.Visible = (MODE = "Edit")
+        cmdCommit.Visible = (MODE = "Edit")
+        cmdManagePages.Visible = (MODE = "Edit") And Not STAND_ALONE
+
+        cmdCancel.Visible = (MODE = "Edit" Or MODE = "Routes" Or MODE = "Join")
+
+        cboRouteNames.Visible = (MODE = "Routes")
+        lstRoutes.Visible = (MODE = "Routes")
+
+        lblLayoutPages.Visible = (MODE <> "Join")
+        btnAddLayoutPage.Visible = (MODE <> "Join")
+        btnDuplicatePage.Visible = (MODE <> "Join")
+        btnCombinePages.Visible = (MODE <> "Join") And Not Flat_Structure  ' Join requires a layout page file
+        btnRenameLayoutPage.Visible = (MODE <> "Join")
+        btnRemoveLayoutPage.Visible = (MODE <> "Join")
+        cmdRevealAddressesPage.Visible = (MODE <> "Join")
+        cmdRevealTextPage.Visible = (MODE <> "Join")
+
+        ' lstInput visibility is set in tools menu, not here
+        lstOutput.Visible = False
+
+        lstMasterFile.Visible = Developer_Environment
+        ShowInputFileToolStripMenuItem.Visible = Developer_Environment Or Verbose
+        ShowOutputFileToolStripMenuItem.Visible = Developer_Environment
+        ConsistencyCheckToolStripMenuItem.Visible = Developer_Environment
+        DumpElementsToolStripMenuItem.Visible = Developer_Environment
+        SetTestLevelToolStripMenuItem.Visible = Developer_Environment
+        StatusVariablesToolStripMenuItem.Visible = Developer_Environment
+        TurnOffDeveloperModeToolStripMenuItem.Visible = Developer_Environment
+
         If Not STAND_ALONE Then VisibilitySetCommandlineMode(CMDLINE_MODE)
-        not_first_call = True
     End Sub
     Private Sub AxesDraw()
         lblC00.Text = Format(Col_Offset)
@@ -998,7 +1245,7 @@ MF_Write_Error:
 
         Empty_Element.id = ""
         Empty_Element.typ_s = ""
-        Empty_Element.drehung_i = 0
+        Empty_Element.drehung_i = -1 ' invalid value
         Empty_Element.artikel_i = 0
         Empty_Element.deviceId_s = ""
         Empty_Element.zustand_s = ""
@@ -1008,6 +1255,23 @@ MF_Write_Error:
         Empty_Element.col_no = 0
         Empty_Element.my_index = 0
     End Sub
+    Public Function InputPromptOK(ByRef result As String, prompt As String, default_text As String) As Boolean
+        ' A better InputBox which destinguishes between entering empty text and hitting the Cancel button
+        ' User hits OK: Inserts the new text string into 'result', can be empty. Trailing blanks will be removed. Function returns True
+        ' User hits Cancel: Leaves 'result' unchanged. Function returns False
+
+        ' Show the custom input dialog
+        Dim inputForm As New CustomInputForm(prompt, default_text)
+        Dim dialogResult As DialogResult = inputForm.ShowDialog()
+
+        If dialogResult = DialogResult.Cancel Then
+            ' User pressed Cancel
+            Return False
+        Else
+            result = Strings.RTrim(inputForm.InputTextBox.Text)
+            Return True
+        End If
+    End Function
     Private Sub GleisbildLoad(fn As String)
         ' Load the layout in 'fn' the input window. If 'fn' is blank (or doen't exist), prompt for the file name
         Dim answer As DialogResult = vbYes, fn2 As String, reopen As Boolean = False
@@ -1024,13 +1288,12 @@ MF_Write_Error:
                     If STAND_ALONE Then Message("Track diagram saved in: " & TrackDiagram_Input_Filename)
                 Else
                     MsgBox("Page could not be saved: " & FilenameNoExtension(FilenameExtract(TrackDiagram_Input_Filename)))
-                    If STAND_ALONE Then Message("to folder " & FilenamePath(TrackDiagram_Input_Filename))
                 End If
             End If
         End If
 
-        If MODE <> "Routes" Then
-            MODE = "View" ' unless in Pages or Routes mode, we switch to View mode
+        If MODE <> "Routes" And MODE <> "Join" Then
+            MODE = "View" ' unless in Join or Routes mode, we switch to View mode
         End If
 
         ROUTE_VIEW_ENABLED = False
@@ -1139,7 +1402,7 @@ MF_Write_Error:
                 Header_Line(Header_Top) = buffer
                 Select Case Header_Top
                     Case 1 : If Header_Line(1) <> "[gleisbildseite]" Then
-                            MsgBox("Input file is not a valid CS2 layout file. (m14)")
+                            MsgBox("Input file is not a valid track diagram file.")
                             FileClose(fno)
                             TrackDiagram_Input_Filename = ""
                             Exit Sub
@@ -1215,7 +1478,7 @@ MF_Write_Error:
                             & " has no address. It has been set to -1. (m17)")
                         warnings = True
                     ElseIf Elements(E_TOP).typ_s <> "gerade" And Elements(E_TOP).typ_s <> "bogen" And Elements(E_TOP).typ_s <> "prellbock" _
-                           And strings.Left(Elements(E_TOP).typ_s, 6) <> "custom" Then
+                           And Strings.Left(Elements(E_TOP).typ_s, 6) <> "custom" Then
                         Message("WARNING: Element in cell " & Elements(E_TOP).id & " (" & Format(Elements(E_TOP).row_no) & "," & Format(Elements(E_TOP).col_no) & ") " & Elements(E_TOP).typ_s _
                             & " has no address. It has been set to -1. (m18)")
                         warnings = True
@@ -1225,7 +1488,10 @@ MF_Write_Error:
                 End If
             End While
             FileClose(fno)
-            Message(2, "No. of lines in input file:" & Str(lstInput.Items.Count))
+            Message(2, "  No. of lines in input file:" & Str(lstInput.Items.Count))
+            If Verbose Or Test_Level >= 1 Then
+                Message("  No. of elements: " & Str(E_TOP))
+            End If
 
             If Not GleisbildConsistencyCheck() Then
                 warnings = True
@@ -1435,41 +1701,97 @@ MF_Write_Error:
             End If
         Next i
         For i = 1 To E_TOP
-            Buffer = "element"
-            lstOutput.Items.Add(Buffer)
-            PrintLine(fno, Buffer)
+            buffer = "element"
+            lstOutput.Items.Add(buffer)
+            PrintLine(fno, buffer)
             If Elements(i).id <> "" Then
-                Buffer = " .id=" & Elements(i).id
-                lstOutput.Items.Add(Buffer)
-                PrintLine(fno, Buffer)
+                buffer = " .id=" & Elements(i).id
+                lstOutput.Items.Add(buffer)
+                PrintLine(fno, buffer)
             End If
             If Elements(i).typ_s <> "" Then
-                Buffer = " .typ=" & Elements(i).typ_s
-                lstOutput.Items.Add(Buffer)
-                PrintLine(fno, Buffer)
+                buffer = " .typ=" & Elements(i).typ_s
+                lstOutput.Items.Add(buffer)
+                PrintLine(fno, buffer)
             End If
             If Elements(i).drehung_i > 0 Then
-                Buffer = " .drehung=" & Format(Elements(i).drehung_i)
-                lstOutput.Items.Add(Buffer)
-                PrintLine(fno, Buffer)
+                buffer = " .drehung=" & Format(Elements(i).drehung_i)
+                lstOutput.Items.Add(buffer)
+                PrintLine(fno, buffer)
             End If
-            Buffer = " .artikel=" & Format(Elements(i).artikel_i) ' artikel is one of the few parameters which all elements have 
-            lstOutput.Items.Add(Buffer)
-            PrintLine(fno, Buffer)
+            buffer = " .artikel=" & Format(Elements(i).artikel_i) ' artikel is one of the few parameters which all elements have 
+            lstOutput.Items.Add(buffer)
+            PrintLine(fno, buffer)
             If Elements(i).deviceId_s <> "" Then
-                Buffer = " .deviceId=" & Format(Elements(i).deviceId_s)
-                lstOutput.Items.Add(Buffer)
-                PrintLine(fno, Buffer)
+                buffer = " .deviceId=" & Format(Elements(i).deviceId_s)
+                lstOutput.Items.Add(buffer)
+                PrintLine(fno, buffer)
             End If
             If Elements(i).zustand_s <> "" Then
-                Buffer = " .zustand=" & Format(Elements(i).zustand_s)
-                lstOutput.Items.Add(Buffer)
-                PrintLine(fno, Buffer)
+                buffer = " .zustand=" & Format(Elements(i).zustand_s)
+                lstOutput.Items.Add(buffer)
+                PrintLine(fno, buffer)
             End If
             If Elements(i).text <> "" Then
-                Buffer = " .text=" & Elements(i).text
-                lstOutput.Items.Add(Buffer)
-                PrintLine(fno, Buffer)
+                buffer = " .text=" & Elements(i).text
+                lstOutput.Items.Add(buffer)
+                PrintLine(fno, buffer)
+            End If
+        Next i
+        On Error GoTo 0
+        FileClose(fno)
+        Return True
+write_error:
+        On Error GoTo 0
+        FileClose(fno)
+        Return False
+    End Function
+    Private Function GleisbildWriteAppendToFile(filename As String) As Boolean
+        ' Appends the elements of the currently loaded layout to the file 'filename'. The file is closed upon return.
+        ' Returns True unless the operation failed.
+        Dim buffer As String, fno As Integer
+
+        lstOutput.Items.Clear()
+
+        On Error GoTo write_error
+        fno = FreeFile()
+        FileOpen(fno, filename, OpenMode.Append)
+        For i = 1 To E_TOP
+            buffer = "element"
+            lstOutput.Items.Add(buffer)
+            PrintLine(fno, buffer)
+            If Elements(i).id <> "" Then
+                buffer = " .id=" & Elements(i).id
+                lstOutput.Items.Add(buffer)
+                PrintLine(fno, buffer)
+            End If
+            If Elements(i).typ_s <> "" Then
+                buffer = " .typ=" & Elements(i).typ_s
+                lstOutput.Items.Add(buffer)
+                PrintLine(fno, buffer)
+            End If
+            If Elements(i).drehung_i > 0 Then
+                buffer = " .drehung=" & Format(Elements(i).drehung_i)
+                lstOutput.Items.Add(buffer)
+                PrintLine(fno, buffer)
+            End If
+            buffer = " .artikel=" & Format(Elements(i).artikel_i) ' artikel is one of the few parameters which all elements have 
+            lstOutput.Items.Add(buffer)
+            PrintLine(fno, buffer)
+            If Elements(i).deviceId_s <> "" Then
+                buffer = " .deviceId=" & Format(Elements(i).deviceId_s)
+                lstOutput.Items.Add(buffer)
+                PrintLine(fno, buffer)
+            End If
+            If Elements(i).zustand_s <> "" Then
+                buffer = " .zustand=" & Format(Elements(i).zustand_s)
+                lstOutput.Items.Add(buffer)
+                PrintLine(fno, buffer)
+            End If
+            If Elements(i).text <> "" Then
+                buffer = " .text=" & Elements(i).text
+                lstOutput.Items.Add(buffer)
+                PrintLine(fno, buffer)
             End If
         Next i
         On Error GoTo 0
@@ -1755,7 +2077,7 @@ write_error:
                 el_new.drehung_i = 0
             Case "curve"
                 el_new.typ_s = "bogen"
-                el_new.drehung_i = 0
+                el_new.drehung_i = DrehungGuessBogen(el_new.row_no, el_new.col_no)
             Case "curve_parallel"
                 el_new.typ_s = "doppelbogen"
                 el_new.drehung_i = 0
@@ -1770,7 +2092,7 @@ write_error:
                 el_new.drehung_i = 0
             Case "decouple"
                 el_new.typ_s = "entkuppler"
-                el_new.drehung_i = DrehungGuess(el_new.row_no, el_new.col_no)
+                el_new.drehung_i = DrehungGuessGerade(el_new.row_no, el_new.col_no)
                 el_new.artikel_i = DigitalArtikelPrompt(el_new)
             Case "end"
                 el_new.typ_s = "prellbock"
@@ -1793,7 +2115,7 @@ write_error:
                 el_new.artikel_i = DigitalArtikelPrompt(el_new)
             Case "signal"
                 el_new.typ_s = "signal"
-                el_new.drehung_i = DrehungGuess(el_new.row_no, el_new.col_no)
+                el_new.drehung_i = DrehungGuessGerade(el_new.row_no, el_new.col_no)
                 el_new.artikel_i = DigitalArtikelPrompt(el_new)
             Case "signal_f_hp01"
                 el_new.typ_s = "signal_f_hp01"
@@ -1813,7 +2135,7 @@ write_error:
                 el_new.artikel_i = DigitalArtikelPrompt(el_new)
             Case "s88"
                 el_new.typ_s = "s88kontakt"
-                el_new.drehung_i = DrehungGuess(el_new.row_no, el_new.col_no)
+                el_new.drehung_i = DrehungGuessGerade(el_new.row_no, el_new.col_no)
                 el_new.artikel_i = DigitalArtikelPrompt(el_new)
                 If el_new.artikel_i >= 1000 Then
                     el_new.deviceId_s = DeviceIdPrompt("0x...")
@@ -1822,7 +2144,7 @@ write_error:
                 End If
             Case "s88_curve"
                 el_new.typ_s = "s88bogen"
-                el_new.drehung_i = 0
+                el_new.drehung_i = DrehungGuessBogen(el_new.row_no, el_new.col_no)
                 el_new.artikel_i = DigitalArtikelPrompt(el_new)
                 If el_new.artikel_i >= 1000 Then
                     el_new.deviceId_s = DeviceIdPrompt("0x...")
@@ -1848,14 +2170,14 @@ write_error:
                 el_new.artikel_i = DigitalArtikelPrompt(el_new)
             Case "straight"
                 el_new.typ_s = "gerade"
-                el_new.drehung_i = DrehungGuess(el_new.row_no, el_new.col_no)
+                el_new.drehung_i = DrehungGuessGerade(el_new.row_no, el_new.col_no)
             Case "switch_left"
                 el_new.typ_s = "linksweiche"
-                el_new.drehung_i = 1 - DrehungGuess(el_new.row_no, el_new.col_no)
+                el_new.drehung_i = 1 - DrehungGuessGerade(el_new.row_no, el_new.col_no)
                 el_new.artikel_i = DigitalArtikelPrompt(el_new)
             Case "switch_right"
                 el_new.typ_s = "rechtsweiche"
-                el_new.drehung_i = 1 - DrehungGuess(el_new.row_no, el_new.col_no)
+                el_new.drehung_i = 1 - DrehungGuessGerade(el_new.row_no, el_new.col_no)
                 el_new.artikel_i = DigitalArtikelPrompt(el_new)
             Case "switch_y"
                 el_new.typ_s = "yweiche"
@@ -1931,7 +2253,6 @@ write_error:
     Private Sub ElementsSort()
         ' Insertion sort by id_normalized
         Dim i As Integer, j As Integer, s As String, el As ELEMENT
-
         For i = 2 To E_TOP
             el = Elements(i)
             s = el.id_normalized
@@ -1942,6 +2263,9 @@ write_error:
             End While
             Elements(j) = el
         Next i
+        For i = 1 To E_TOP
+            Elements(i).my_index = i
+        Next
     End Sub
     Private Function DigitalAddress(el As ELEMENT) As String
         Dim remainder As Integer, da As String
@@ -1996,20 +2320,101 @@ write_error:
     Private Function DeviceIdPrompt(old_deviceId_s As String) As String
         Return (InputBox("Enter the device id (hex string)", "Device ID Prompt", old_deviceId_s))
     End Function
-    Private Function DrehungGuess(r As Integer, c As Integer) As Integer
-        ' Given a grid cell, look north and south to guess if drehung should be 1 rather than 0
-        Dim el_n As ELEMENT, el_s As ELEMENT
-        If r > 0 And r < ROW_MAX Then
-            el_n = ElementGet2(r - 1, c)
+    Private Function DrehungGuessGerade(r As Integer, c As Integer) As Integer
+        ' Given a grid cell, look north, south, east and west to guess the drehung for straight (and equivalent) track
+        Dim el_n As ELEMENT, el_s As ELEMENT, el_w As ELEMENT, el_e As ELEMENT
+        If r > 0 And r < ROW_MAX And c > 0 And c < COL_MAX Then
+            el_n = ElementGet2(r - 1, c) ' returns the empty element object (having typ_s="") if the cell is blank
             el_s = ElementGet2(r + 1, c)
+            el_w = ElementGet2(r, c - 1)
+            el_e = ElementGet2(r, c + 1)
             Select Case el_n.typ_s
-                Case "bogen" : If el_n.drehung_i = 0 Or el_n.drehung_i = 3 Then Return 1
-                Case "gerade" : If el_n.drehung_i = 1 Then Return 1
+                Case "bogen", "s88bogen" : If el_n.drehung_i = 0 Or el_n.drehung_i = 3 Then Return 1
+                Case "gerade", "entkupler", "s88kontakt", "signal" : If el_n.drehung_i = 1 Or el_n.drehung_i = 3 Then Return 1
+                Case "linksweiche" : If el_n.drehung_i <> 3 Then Return 1
+                Case "rechtsweiche" : If el_n.drehung_i <> 1 Then Return 1
             End Select
 
             Select Case el_s.typ_s
-                Case "bogen" : If el_s.drehung_i = 1 Or el_s.drehung_i = 2 Then Return 1
-                Case "gerade" : If el_s.drehung_i = 1 Then Return 1
+                Case "bogen", "s88bogen" : If el_s.drehung_i = 1 Or el_s.drehung_i = 2 Then Return 1
+                Case "gerade", "entkupler", "s88kontakt", "signal" : If el_s.drehung_i = 1 Or el_s.drehung_i = 3 Then Return 1
+                Case "linksweiche" : If el_s.drehung_i <> 1 Then Return 1
+                Case "rechtsweiche" : If el_s.drehung_i <> 3 Then Return 1
+            End Select
+
+            Select Case el_e.typ_s
+                Case "bogen", "s88bogen" : If el_e.drehung_i = 2 Or el_e.drehung_i = 3 Then Return 0
+                Case "gerade", "entkupler", "s88kontakt", "signal" : If el_e.drehung_i = 1 Then Return 1
+                Case "linksweiche" : If el_e.drehung_i = 2 Then Return 1
+                Case "rechtsweiche" : If el_e.drehung_i = 0 Then Return 1
+            End Select
+
+            Select Case el_w.typ_s
+                Case "bogen", "s88bogen" : If el_w.drehung_i = 0 Or el_w.drehung_i = 1 Then Return 0
+                Case "gerade", "entkupler", "s88kontakt", "signal" : If el_w.drehung_i = 1 Then Return 1
+                Case "linksweiche" : If el_w.drehung_i = 0 Then Return 1
+                Case "rechtsweiche" : If el_w.drehung_i = 2 Then Return 1
+            End Select
+        ElseIf c = 0 Or c = COL_MAX Then
+            Return 1
+        End If
+        Return 0
+    End Function
+    Private Function DrehungGuessBogen(r As Integer, c As Integer) As Integer
+        ' Given a grid cell, look north, south, east and west to guess the drehung for straight (and equivalent) track
+        Dim el_n As ELEMENT, el_s As ELEMENT, el_w As ELEMENT, el_e As ELEMENT
+        If r > 0 And r < ROW_MAX And c > 0 And c < COL_MAX Then
+            el_n = ElementGet2(r - 1, c) ' returns the empty element object (with typ_s="" and drehung_i = -1) if the cell is blank
+            el_s = ElementGet2(r + 1, c)
+            el_w = ElementGet2(r, c - 1)
+            el_e = ElementGet2(r, c + 1)
+
+            Select Case el_n.typ_s
+                Case "gerade", "entkupler", "s88kontakt"
+                    If el_n.drehung_i = 1 Then
+                        If el_e.drehung_i = 1 Or el_w.drehung_i = 0 Then
+                            Return 2
+                        Else
+                            Return 1
+                        End If
+                    End If
+                Case "bogen", "s88bogen" : If el_n.drehung_i <> -1 Then Return (el_n.drehung_i + 2) Mod 4
+            End Select
+
+            Select Case el_s.typ_s
+                Case "gerade", "entkupler", "s88kontakt"
+                    If el_s.drehung_i = 1 Then
+                        If el_w.drehung_i = 1 Or el_e.drehung_i = 0 Then
+                            Return 0
+                        Else
+                            Return 3
+                        End If
+                    End If
+                Case "bogen", "s88bogen" : If el_s.drehung_i <> -1 Then Return (el_s.drehung_i + 2) Mod 4
+            End Select
+
+            Select Case el_e.typ_s
+                Case "gerade", "entkupler", "s88kontakt"
+                    If el_e.drehung_i = 1 Then
+                        If el_s.drehung_i = 1 Or el_n.drehung_i <> 0 Then
+                            Return 3
+                        Else
+                            Return 0
+                        End If
+                    End If
+                Case "bogen", "s88bogen" : If el_e.drehung_i <> -1 Then Return (el_e.drehung_i + 2) Mod 4
+            End Select
+
+            Select Case el_w.typ_s
+                Case "gerade", "entkupler", "s88kontakt"
+                    If el_w.drehung_i = 0 Then
+                        If el_n.drehung_i = 1 Or el_s.drehung_i <> 0 Then
+                            Return 2
+                        Else
+                            Return 1
+                        End If
+                    End If
+                Case "bogen", "s88bogen" : If el_w.drehung_i <> -1 Then Return (el_w.drehung_i + 2) Mod 4
             End Select
 
         End If
@@ -2146,6 +2551,7 @@ write_error:
         E_TOP = 0
         Header_Top = 0
         TrackDiagram_Input_Filename = ""
+        Page_No = 0
         GleisBildDisplayClear()
 
         MsgBox("Navigate to the desired location and create a new subfolder with the name of your new layout")
@@ -2333,6 +2739,7 @@ write_error:
             If Developer_Environment Then lstProperties.Items.Add("id_norm= " & el.id_normalized)
             If Developer_Environment Then lstProperties.Items.Add("row/col= (" & DecodeRowNo(el.id_normalized) & "," & DecodeColNo(el.id_normalized) & ")")
             lstProperties.Items.Add("address= " & DigitalAddress(el))
+            If Developer_Environment Or Verbose Then lstProperties.Items.Add("element= " & Format(el.my_index) & " of " & Format(E_TOP))
             If el.text <> "" Then
                 lstProperties.Items.Add("text   = " & el.text)
             Else
@@ -2464,13 +2871,42 @@ write_error:
         ' overlays the el.text on the element's icon
         If el.row_no > 255 Or el.col_no > 255 Then Exit Sub ' no action, element is outside of the visible grid
         If el.text <> "" Then ' 231024
-            If el.drehung_i = 0 Then
-                StringDisplay(e, el.text, Brush_black, 0, 18)
-            ElseIf el.drehung_i = 1 Then
-                StringDisplayVertical(e, el.text, Brush_black, 17, 5)
-            Else
-                StringDisplay(e, el.text, Brush_black, 0, 18) '231024
-            End If
+            Select Case el.typ_s
+                Case "bogen"
+                    If el.drehung_i = 0 Or el.drehung_i = 3 Then
+                        StringDisplay(e, el.text, Brush_black, 0, 0)
+                    Else
+                        StringDisplay(e, el.text, Brush_black, 0, 15)
+                    End If
+                Case "linksweiche"
+                    If el.drehung_i = 0 Then
+                        StringDisplayVertical(e, el.text, Brush_black, 17, 5)
+                    ElseIf el.drehung_i = 1 Then
+                        StringDisplay(e, el.text, Brush_black, 5, -2)
+                    ElseIf el.drehung_i = 2 Then
+                        StringDisplayVertical(e, el.text, Brush_black, -2, 5)
+                    Else
+                        StringDisplay(e, el.text, Brush_black, 5, 17)
+                    End If
+                Case "rechtsweiche"
+                    If el.drehung_i = 2 Then
+                        StringDisplayVertical(e, el.text, Brush_black, 17, 5)
+                    ElseIf el.drehung_i = 3 Then
+                        StringDisplay(e, el.text, Brush_black, 5, -2)
+                    ElseIf el.drehung_i = 0 Then
+                        StringDisplayVertical(e, el.text, Brush_black, -2, 5)
+                    Else
+                        StringDisplay(e, el.text, Brush_black, 5, 17)
+                    End If
+                Case Else
+                    If el.drehung_i = 0 Then
+                        StringDisplay(e, el.text, Brush_black, 0, 18)
+                    ElseIf el.drehung_i = 1 Then
+                        StringDisplayVertical(e, el.text, Brush_black, 17, 5)
+                    Else
+                        StringDisplay(e, el.text, Brush_black, 0, 18) '231024
+                    End If
+            End Select
         End If
     End Sub
 
@@ -2655,7 +3091,6 @@ write_error:
             SaveAsToolStripMenuItem.Visible = False
             HelpToolStripMenuItem.Visible = False
         End If
-        '   QuitToolStripMenuItem.Text = "Return to Train Control"
         QuitToolStripMenuItem.Visible = False ' menu item has been replaced with buttons
     End Sub
     Private Sub WindowMove(ByVal n_rows As Integer, ByVal n_cols As Integer)
@@ -3375,6 +3810,7 @@ write_error:
 
     Private Sub OpenToolStripMenuItem_Click(sender As Object, e As EventArgs) Handles OpenToolStripMenuItem.Click
         GleisBildDisplayClear()
+        frmHelp.HelpWindowClose()
         GleisbildLoad("")
         If ROUTE_VIEW_ENABLED AndAlso cboRouteNames.Text <> "" AndAlso cboRouteNames.Text <> "Pick a route" Then
             RH.RouteShow(cboRouteNames.Text)
@@ -3399,16 +3835,19 @@ write_error:
 
     Private Sub ReopenLastToolStripMenuItem_Click(sender As Object, e As EventArgs) Handles ReopenLastToolStripMenuItem.Click
         GleisBildDisplayClear()
+        frmHelp.HelpWindowClose()
         GleisbildLoad(TrackDiagram_Input_Filename)
         GleisbildDisplay()
     End Sub
     Private Sub picClick(picName As String)
-        Dim el As ELEMENT, el_new As ELEMENT = Empty_Element, dig_code As String = "", route_name As String = "", text_str As String = ""
+        Dim el As ELEMENT, el_new As ELEMENT, dig_code As String, route_name As String = "", text_str As String = ""
         Dim row_clicked As Integer, col_clicked As Integer
-        Dim s As String = ""
-        Dim e As Object = Nothing ' dummy variable 231024 
+        Dim s As String, user_input As Object
 
         grpMoveWindow.Enabled = True
+        grpIcons.Enabled = True
+        grpEditActions.Enabled = True
+
         row_clicked = Val(Mid(picName, 4, 2))
         col_clicked = Val(Mid(picName, 6, 2))
 
@@ -3456,47 +3895,36 @@ write_error:
                         ElementDisplay(el)
                         EDIT_CHANGES = True
                     End If
-                Case "edit_text" : If el.text <> "" And el.typ_s = "" Then
-                        s = el.text
-                        el.text = RTrim(InputBox("Enter text", "Text", el.text)) ' 231022 Trim() replaced with RTrim
-                        If el.text = "" Then el.text = s ' text cannot be left blank in a text elment due to Märklin's convention of leaving the type designation blank
-                        Elements(el.my_index) = el
-                        Reveal_Text = True ' to counter that the user may have turned it off
-                        Reveal_Addr = False
-                        ElementDisplay(el)
-                        EDIT_CHANGES = True
-                    ElseIf el.typ_s <> "" Then ' allow for text in non-text objects - like CS2 allows for
-                        s = el.text
-
-
-                        ' Show the custom input dialog
-                        Dim inputForm As New CustomInputForm(s)
-                        Dim dialogResult As DialogResult = inputForm.ShowDialog()
-
-                        If dialogResult = dialogResult.Cancel Then
-                            ' User pressed Cancel
-                            ' MessageBox.Show("Cancel was pressed. Keeping the original text.", "Information", MessageBoxButtons.OK, MessageBoxIcon.Information)
-                        Else
-                            Dim userInput As String = inputForm.InputTextBox.Text
-                            If userInput.Trim() = "" Then
-                                ' User clicked OK but left input blank
-                                el.text = userInput.TrimEnd()
-                                ' MessageBox.Show("Empty input detected. Keeping the original text.", "Information", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                Case "edit_text"
+                    user_input = ""
+                    If InputPromptOK(user_input, "Enter new text", el.text) Then
+                        If el.typ_s = "" Then ' el is a CS2 text object 
+                            If Trim(user_input) = "" Then ' text cannot be left blank in a text element due to Märklin's convention of leaving the type designation blank
+                                MsgBox("Text cannot be blank in a text object. The text object was deleted")
+                                ElementRemove(el.my_index)
+                                ElementDisplay(PicGet(el.row_no, el.col_no), el.drehung_i, picIconEmpty.Image)
+                                EDIT_CHANGES = True
                             Else
-                                ' Update the text
-                                el.text = userInput.TrimEnd()
+                                el.text = user_input
+                                Elements(el.my_index) = el
+                                Reveal_Text = True ' to counter that the user may have turned it off
+                                Reveal_Addr = False
+                                ElementDisplay(el)
+                                EDIT_CHANGES = True
                             End If
+                        Else ' allow for text in non-text objects - like CS2 allows for
+                            el.text = user_input
+                            Elements(el.my_index) = el
+                            Reveal_Text = True ' to counter that the user may have turned it off
+                            Reveal_Addr = False
+                            ElementDisplay(el)
+                            EDIT_CHANGES = True
                         End If
-
-
-                        ' el.text = RTrim(InputBox("Enter text", "Text", el.text)) ' 231022 Trim() replaced with RTrim
-                        Elements(el.my_index) = el
-                        Reveal_Text = True ' to counter that the user may have turned it off
-                        Reveal_Addr = False
-                        ElementDisplay(el)
-                        EDIT_CHANGES = True
+                    Else
+                        ' User hit the cancel button or entered empty text. No action to be taken
                     End If
-                Case "empty" : ElementRemove(el.my_index)
+                Case "empty"
+                    ElementRemove(el.my_index)
                     ElementDisplay(PicGet(el.row_no, el.col_no), el.drehung_i, picIconEmpty.Image)
                 Case "rotate" ' NB, some elements should not be rotated, like cross. Some should only rotate once
                     If el.typ_s <> "kreuzung" And el.typ_s <> "fahrstrasse" And el.typ_s <> "drehscheibe" And el.typ_s <> "lampe" _
@@ -3518,6 +3946,8 @@ write_error:
                         el_moving = el
                         ElementDisplay(PicGet(el.row_no, el.col_no), el.drehung_i, picIconMoveElement.Image)
                         grpMoveWindow.Enabled = False
+                        grpIcons.Enabled = False
+                        grpEditActions.Enabled = False
                         Active_Tool = "move_element_step2"
                     End If
                 Case "move_element_step2"
@@ -3550,12 +3980,12 @@ write_error:
                     GleisBildDisplayClear()
                     GleisbildDisplay()
                 Case Else
-                    ElementRemove(el.my_index) ' no action if el is empty_element (i.e. the cell clicked is empty
+                    ElementRemove(el.my_index) ' no action if el is empty_element (i.e. the cell clicked is empty)
                     el_new = ElementInsert(picName, Active_Tool)
                     If Test_Level = 1 Then
-                        Message(1, "New element in (row,col)=(" & Format(el_new.row_no) & "," & Format(el_new.col_no) & "): " & Translate(el_new.typ_s))
+                        Message("New element in (row,col)=(" & Format(el_new.row_no) & "," & Format(el_new.col_no) & "): " & Translate(el_new.typ_s))
                     Else
-                        Message(2, "New element in (row,col)=(" & Format(el_new.row_no) & "," & Format(el_new.col_no) & "): " & el_new.typ_s & ", artikel=" & Format(el_new.artikel_i) & ", drehung=" & Format(el_new.drehung_i))
+                        Message(2, "New element in (row,col)=(" & Format(el_new.row_no) & "," & Format(el_new.col_no) & "): " & el_new.typ_s & ", artikel=" & Format(el_new.artikel_i) & ", drehung=" & Format(el_new.drehung_i) & ", E_Top=" & Format(E_TOP))
                     End If
                     Reveal_Addr = (el_new.text = "")
                     Reveal_Text = Not Reveal_Addr
@@ -3563,50 +3993,6 @@ write_error:
             End Select
         End If
     End Sub
-
-    Public Class CustomInputForm
-        Inherits Form
-
-        Private WithEvents OKButton2 As Button
-        Private WithEvents CancelButton2 As Button
-        Public Property InputTextBox As TextBox
-
-        ' Constructor with a default value for the TextBox
-        Public Sub New(s As String)
-            ' Initialize controls
-            OKButton2 = New Button() With {.Text = "OK", .DialogResult = DialogResult.OK, .Top = 50, .Left = 30}
-            CancelButton2 = New Button() With {.Text = "Cancel", .DialogResult = DialogResult.Cancel, .Top = 50, .Left = 120}
-            InputTextBox = New TextBox() With {.Top = 10, .Left = 30, .Width = 200, .Text = s} ' Set default value
-
-            ' Add controls to the form
-            Me.Controls.Add(OKButton2)
-            Me.Controls.Add(CancelButton2)
-            Me.Controls.Add(InputTextBox)
-
-            ' Set up the form properties
-            Me.Text = "Custom Input"
-            Me.ClientSize = New Size(260, 120)
-
-            ' Center the form in the parent window
-            Me.StartPosition = FormStartPosition.CenterParent
-
-            ' Set Accept and Cancel buttons for the form
-            Me.AcceptButton = OKButton2
-            Me.CancelButton = CancelButton2
-        End Sub
-
-        Private Sub OKButton_Click(sender As Object, e As EventArgs) Handles OKButton2.Click
-            Me.DialogResult = DialogResult.OK
-            Me.Close()
-        End Sub
-
-        Private Sub CancelButton_Click(sender As Object, e As EventArgs) Handles CancelButton2.Click
-            Me.DialogResult = DialogResult.Cancel
-            Me.Close()
-        End Sub
-    End Class
-
-
     Private Sub picHover(picObject As Object)
         Dim picName As String = picObject.name
         '        Static picName_old As String
@@ -3635,7 +4021,10 @@ write_error:
             Reveal_Text_State = Reveal_Text
             FileToolStripMenuItem.Enabled = False
             ToolsToolStripMenuItem.Enabled = False
+            AllPagesToolStripMenuItem2.Enabled = False
+            AllPagesToolStripMenuItem3.Enabled = False
             QuitToolStripMenuItem.Enabled = False
+
             EDIT_CHANGES = False
             GleisbildGridSet(True)
             AdjustPage()
@@ -3660,6 +4049,8 @@ write_error:
                 SaveToolStripMenuItem.Enabled = False
                 SaveAsToolStripMenuItem.Enabled = False
                 ToolsToolStripMenuItem.Enabled = False
+                AllPagesToolStripMenuItem2.Enabled = False
+                AllPagesToolStripMenuItem3.Enabled = False
 
                 AdjustPage()
                 GleisbildDisplay()
@@ -3671,13 +4062,16 @@ write_error:
     End Sub
 
     Private Sub cmdCancel_Click(sender As Object, e As EventArgs) Handles cmdCancel.Click
-        If EDIT_CHANGES Then
+        If MODE = "Edit" And EDIT_CHANGES Then
             ElementsRecall()
             EDIT_CHANGES = False
         End If
 
-        If Not STAND_ALONE And Not (MODE = "Routes") Then CloseShop()
+        If Not STAND_ALONE And Not (MODE = "Routes" Or MODE = "Join") Then CloseShop()
         grpMoveWindow.Enabled = True
+        grpIcons.Enabled = True
+        grpEditActions.Enabled = True
+
 
         If MODE = "Routes" Or MODE = "Edit" Then
             Reveal_Addr = Reveal_Addr_State
@@ -3698,9 +4092,12 @@ write_error:
         ShowOutputFileToolStripMenuItem.Enabled = True
         UseEnglishTermsForElementsToolStripMenuItem.Enabled = True
         ConsistencyCheckToolStripMenuItem.Enabled = True
+        txtCombine.Visible = False
 
         cboRouteNames.Text = ""
 
+        AllPagesToolStripMenuItem2.Enabled = True
+        AllPagesToolStripMenuItem3.Enabled = True
         QuitToolStripMenuItem.Enabled = True
         Active_Tool = ""
         AdjustPage()
@@ -3715,9 +4112,14 @@ write_error:
         Message("Click an element to see its properties")
 
         grpMoveWindow.Enabled = True
+        grpIcons.Enabled = True
+        grpEditActions.Enabled = True
+
         el_moving = Empty_Element
         FileToolStripMenuItem.Enabled = True
         ToolsToolStripMenuItem.Enabled = True
+        AllPagesToolStripMenuItem2.Enabled = True
+        AllPagesToolStripMenuItem3.Enabled = True
         QuitToolStripMenuItem.Enabled = True
         CHANGED = CHANGED Or EDIT_CHANGES
         EDIT_CHANGES = False
@@ -6221,6 +6623,7 @@ write_error:
     End Sub
     Private Sub NewLayoutToolStripMenuItem_Click(sender As Object, e As EventArgs) Handles NewLayoutToolStripMenuItem.Click
         ' File-New Layout
+        frmHelp.HelpWindowClose()
         LayoutCreate()
     End Sub
 
@@ -6243,6 +6646,21 @@ write_error:
         Dim track_diagram_filename As String, page_name As String, c As String, answer As Integer
         Dim fno As Integer
         If FILE_LOADED Then
+            If CHANGED Then
+                Dim layout_name As String
+                layout_name = FilenameProper(TrackDiagram_Input_Filename)
+
+                If STAND_ALONE Then answer = MsgBox("Track diagram """ & layout_name & """ has been modified but not saved. Should changes be saved?", vbYesNo)
+                If answer = vbYes Or Not STAND_ALONE Then
+                    If GleisbildSave() Then
+                        If STAND_ALONE Then Message("Track diagram saved in: " & TrackDiagram_Input_Filename)
+                    Else
+                        MsgBox("Page could not be saved: " & FilenameNoExtension(FilenameExtract(TrackDiagram_Input_Filename)))
+                    End If
+                End If
+                CHANGED = False
+            End If
+
             If PFH.PageFileExists(MasterFile_Directory) Then
                 answer = Val(InputBox("Do you want to create a new page from scratch (1) or load an external file into your new page (2)", "Add page choice", "1"))
                 Select Case answer
@@ -6487,9 +6905,14 @@ rename_error:
         Message("Click an element to see its properties")
 
         grpMoveWindow.Enabled = True
+        grpIcons.Enabled = True
+        grpEditActions.Enabled = True
+
         el_moving = Empty_Element
         FileToolStripMenuItem.Enabled = True
         ToolsToolStripMenuItem.Enabled = True
+        AllPagesToolStripMenuItem2.Enabled = True
+        AllPagesToolStripMenuItem3.Enabled = True
         QuitToolStripMenuItem.Enabled = True
         CHANGED = CHANGED Or EDIT_CHANGES
         EDIT_CHANGES = False
@@ -6655,6 +7078,9 @@ rename_error:
         WindowMove(-Row_Offset, -Col_Offset)
     End Sub
 
+    Private Sub btnJoinPages_Click(sender As Object, e As EventArgs) Handles btnCombinePages.Click
+        CPH.initiate
+    End Sub
 
     Private Sub btnDisplayRefreshEdit_Click(sender As Object, e As EventArgs) Handles btnDisplayRefreshEdit.Click
         ' Toggle visibility of addresses and text. Since they could overwrite each other it is either or, or none.
@@ -6670,18 +7096,148 @@ rename_error:
         GleisbildDisplay()
     End Sub
 
+    Private Sub CurrentPageToolStripMenuItem_Click(sender As Object, e As EventArgs) Handles CurrentPageToolStripMenuItem2.Click
+        ' Shows addresses from the currently selected page only
+        Const ww As Integer = 350
+        If E_TOP > 0 Then
+            If Me.Left <= ww Then
+                frmHelp.HelpWindowSetPosStoredButWidth(Me.Left + 20, Me.Top + 50, ww, Me.Height - 50)
+            Else
+                frmHelp.HelpWindowSetPosStoredButWidth(Me.Left - ww, Me.Top, ww, Me.Height)
+            End If
+            frmHelp.HelpDisplaySortedListInitialize("Addresses in Use")
+            frmHelp.HelpDisplaySortedListAdd("       page: " & FilenameProper(TrackDiagram_Input_Filename))
+            frmHelp.HelpDisplaySortedListAdd("      element               row,col")
+            ShowAddressesHelper("")
+        End If
+    End Sub
+
+    Private Sub AllPagesToolStripMenuItem_Click(sender As Object, e As EventArgs) Handles AllPagesToolStripMenuItem2.Click
+        ' Shows addresses from all pages
+        Const ww As Integer = 450
+        Dim pno As Integer, fname As String, page_name As String, active_file As String
+        If FILE_LOADED AndAlso PFH.PageFileExists(MasterFile_Directory) Then
+            active_file = TrackDiagram_Input_Filename
+            If Me.Left <= ww Then
+                frmHelp.HelpWindowSetPosStoredButWidth(Me.Left + 20, Me.Top + 50, ww, Me.Height - 50)
+            Else
+                frmHelp.HelpWindowSetPosStoredButWidth(Me.Left - ww, Me.Top, ww, Me.Height)
+            End If
+            frmHelp.HelpDisplaySortedListInitialize("Addresses in Use")
+            frmHelp.HelpDisplaySortedListAdd("                            row,col   page name")
+            Do
+                fname = PFH.LayoutFileNameGet(pno)
+                If fname = "" Then Exit Do
+                page_name = PFH.LayoutNameGet(pno)
+                GleisbildLoad(fname)
+                ShowAddressesHelper(page_name)
+                pno = pno + 1
+            Loop
+            GleisbildLoad(active_file)
+            GleisbildDisplay()
+        Else
+            MsgBox("First load a track diagram")
+        End If
+    End Sub
+
+    Private Sub ShowAddressesHelper(page_name As String)
+        Dim ei As Integer, el As ELEMENT, s As String
+        For ei = 1 To E_TOP
+            el = Elements(ei)
+            If el.artikel_i > 0 AndAlso Strings.Left(el.typ_s, 3) <> "s88" AndAlso el.typ_s <> "fahrstrasse" AndAlso el.typ_s <> "pfeil" Then
+                s = Strings.RSet(DigitalAddress(el), 4)
+                If Strings.Right(s, 1) = "b" Then
+                    s = " " & s
+                Else
+                    s = s & " "
+                End If
+                s = s & " " & Strings.LSet(Translate(el.typ_s), 20) &
+                                    " (" & Strings.RSet(Format(DecodeRowNo(el.id_normalized)), 3) & "," & Strings.RSet(Format(DecodeColNo(el.id_normalized)), 3) & ")"
+                If page_name <> "" Then s = s & "  " & page_name
+                frmHelp.HelpDisplaySortedListAdd(s)
+            End If
+        Next ei
+    End Sub
+    Private Sub CurrentPageToolStripMenuItem1_Click(sender As Object, e As EventArgs) Handles CurrentPageToolStripMenuItem3.Click
+        ' Shows s88 from current page
+        Const ww As Integer = 350
+        If E_TOP > 0 Then
+            If Me.Left <= ww Then
+                frmHelp.HelpWindowSetPosStoredButWidth(Me.Left + 20, Me.Top + 50, ww, Me.Height - 50)
+            Else
+                frmHelp.HelpWindowSetPosStoredButWidth(Me.Left - ww, Me.Top, ww, Me.Height)
+            End If
+            frmHelp.HelpDisplaySortedListInitialize("s88 in Use")
+            frmHelp.HelpDisplaySortedListAdd(" ")
+            frmHelp.HelpDisplaySortedListAdd("            page: " & FilenameProper(TrackDiagram_Input_Filename))
+            frmHelp.HelpDisplaySortedListAdd("           element                row,col")
+            Shows88Helper("")
+        End If
+    End Sub
+
+    Private Sub AllPagesToolStripMenuItem1_Click(sender As Object, e As EventArgs) Handles AllPagesToolStripMenuItem3.Click
+        ' Shows s88 from all pages
+        Const ww = 500
+        Dim pno As Integer, fname As String, page_name As String, active_file As String
+        If FILE_LOADED AndAlso PFH.PageFileExists(MasterFile_Directory) Then
+            active_file = TrackDiagram_Input_Filename
+            If Me.Left <= ww Then
+                frmHelp.HelpWindowSetPosStoredButWidth(Me.Left + 20, Me.Top + 50, ww, Me.Height - 50)
+            Else
+                frmHelp.HelpWindowSetPosStoredButWidth(Me.Left - ww, Me.Top, ww, Me.Height)
+            End If
+            frmHelp.HelpDisplaySortedListInitialize("s88 in Use")
+            frmHelp.HelpDisplaySortedListAdd("                                  row,col   page name")
+            Do
+                fname = PFH.LayoutFileNameGet(pno)
+                If fname = "" Then Exit Do
+                page_name = PFH.LayoutNameGet(pno)
+                GleisbildLoad(fname)
+                Shows88Helper(page_name)
+                pno = pno + 1
+            Loop
+            GleisbildLoad(active_file)
+            GleisbildDisplay()
+        Else
+            MsgBox("First load a track diagram")
+        End If
+    End Sub
+
+    Private Sub Shows88Helper(page_name As String)
+        Dim ei As Integer, el As ELEMENT, s As String
+        For ei = 1 To E_TOP
+            el = Elements(ei)
+            If el.artikel_i > 0 AndAlso Strings.Left(el.typ_s, 3) = "s88" Then
+                s = Strings.LSet(el.deviceId_s, 5) & " " & Strings.RSet(DigitalAddress(el), 4)
+                s = s & " " & Strings.LSet(Translate(el.typ_s), 22) &
+                    "(" & Strings.RSet(Format(DecodeRowNo(el.id_normalized)), 3) & "," & RSet(Format(DecodeColNo(el.id_normalized)), 3) & ")"
+                If page_name <> "" Then s = s & "  " & page_name
+                frmHelp.HelpDisplaySortedListAdd(s)
+            End If
+        Next ei
+    End Sub
+
+
     Private Sub lstLayoutPages_Click(sender As Object, e As EventArgs) Handles lstLayoutPages.Click
         Dim pno As Integer, li As Integer, it As String, fn As String
+
         li = lstLayoutPages.SelectedIndex
         it = lstLayoutPages.SelectedItem
         pno = li
         If it <> "" Then
             fn = PFH.LayoutFileNameGet(pno)
             If fn <> "" Then
-                GleisBildDisplayClear()
-                GleisbildLoad(fn)
-                GleisbildDisplay()
+                If MODE <> "Join" Then
+                    GleisBildDisplayClear()
+                    GleisbildLoad(fn)
+                    GleisbildDisplay()
+                Else
+                    CPH.PageSelected(it, fn)
+                End If
+            Else
+                MsgBox("Track diagram file missing: " & fn) ' should never happen
             End If
         End If
     End Sub
+
 End Class

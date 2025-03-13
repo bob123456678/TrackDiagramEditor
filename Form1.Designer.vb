@@ -31,6 +31,13 @@ Partial Class Form1
         Me.SaveToolStripMenuItem = New System.Windows.Forms.ToolStripMenuItem()
         Me.SaveAsToolStripMenuItem = New System.Windows.Forms.ToolStripMenuItem()
         Me.ExitToolStripMenuItem = New System.Windows.Forms.ToolStripMenuItem()
+        Me.ReportsToolStripMenuItem = New System.Windows.Forms.ToolStripMenuItem()
+        Me.AddressesInUseToolStripMenuItem = New System.Windows.Forms.ToolStripMenuItem()
+        Me.CurrentPageToolStripMenuItem2 = New System.Windows.Forms.ToolStripMenuItem()
+        Me.AllPagesToolStripMenuItem2 = New System.Windows.Forms.ToolStripMenuItem()
+        Me.S88InUseToolStripMenuItem = New System.Windows.Forms.ToolStripMenuItem()
+        Me.CurrentPageToolStripMenuItem3 = New System.Windows.Forms.ToolStripMenuItem()
+        Me.AllPagesToolStripMenuItem3 = New System.Windows.Forms.ToolStripMenuItem()
         Me.ToolsToolStripMenuItem = New System.Windows.Forms.ToolStripMenuItem()
         Me.RefreshToolStripMenuItem = New System.Windows.Forms.ToolStripMenuItem()
         Me.VerboseToolStripMenuItem = New System.Windows.Forms.ToolStripMenuItem()
@@ -692,6 +699,8 @@ Partial Class Form1
         Me.FontDialog1 = New System.Windows.Forms.FontDialog()
         Me.FolderBrowserDialog1 = New System.Windows.Forms.FolderBrowserDialog()
         Me.grpLayoutPages = New System.Windows.Forms.GroupBox()
+        Me.txtCombine = New System.Windows.Forms.TextBox()
+        Me.btnCombinePages = New System.Windows.Forms.Button()
         Me.cmdRevealAddressesPage = New System.Windows.Forms.Button()
         Me.cmdRevealTextPage = New System.Windows.Forms.Button()
         Me.btnDuplicatePage = New System.Windows.Forms.Button()
@@ -1284,10 +1293,10 @@ Partial Class Form1
         '
         'MenuStrip1
         '
-        Me.MenuStrip1.Items.AddRange(New System.Windows.Forms.ToolStripItem() {Me.FileToolStripMenuItem, Me.ToolsToolStripMenuItem, Me.HelpToolStripMenuItem, Me.QuitToolStripMenuItem})
+        Me.MenuStrip1.Items.AddRange(New System.Windows.Forms.ToolStripItem() {Me.FileToolStripMenuItem, Me.ReportsToolStripMenuItem, Me.ToolsToolStripMenuItem, Me.HelpToolStripMenuItem, Me.QuitToolStripMenuItem})
         Me.MenuStrip1.Location = New System.Drawing.Point(0, 0)
         Me.MenuStrip1.Name = "MenuStrip1"
-        Me.MenuStrip1.Size = New System.Drawing.Size(1277, 24)
+        Me.MenuStrip1.Size = New System.Drawing.Size(1309, 24)
         Me.MenuStrip1.TabIndex = 0
         Me.MenuStrip1.Text = "MenuStrip1"
         '
@@ -1301,105 +1310,150 @@ Partial Class Form1
         'NewLayoutToolStripMenuItem
         '
         Me.NewLayoutToolStripMenuItem.Name = "NewLayoutToolStripMenuItem"
-        Me.NewLayoutToolStripMenuItem.Size = New System.Drawing.Size(180, 22)
+        Me.NewLayoutToolStripMenuItem.Size = New System.Drawing.Size(161, 22)
         Me.NewLayoutToolStripMenuItem.Text = "New Layout..."
         '
         'OpenToolStripMenuItem
         '
         Me.OpenToolStripMenuItem.Name = "OpenToolStripMenuItem"
-        Me.OpenToolStripMenuItem.Size = New System.Drawing.Size(180, 22)
+        Me.OpenToolStripMenuItem.Size = New System.Drawing.Size(161, 22)
         Me.OpenToolStripMenuItem.Text = "Open..."
         '
         'ReopenLastToolStripMenuItem
         '
         Me.ReopenLastToolStripMenuItem.Name = "ReopenLastToolStripMenuItem"
-        Me.ReopenLastToolStripMenuItem.Size = New System.Drawing.Size(180, 22)
+        Me.ReopenLastToolStripMenuItem.Size = New System.Drawing.Size(161, 22)
         Me.ReopenLastToolStripMenuItem.Text = "Reopen last"
         '
         'SaveToolStripMenuItem
         '
         Me.SaveToolStripMenuItem.Name = "SaveToolStripMenuItem"
-        Me.SaveToolStripMenuItem.Size = New System.Drawing.Size(180, 22)
+        Me.SaveToolStripMenuItem.Size = New System.Drawing.Size(161, 22)
         Me.SaveToolStripMenuItem.Text = "Save"
         '
         'SaveAsToolStripMenuItem
         '
         Me.SaveAsToolStripMenuItem.Name = "SaveAsToolStripMenuItem"
-        Me.SaveAsToolStripMenuItem.Size = New System.Drawing.Size(180, 22)
+        Me.SaveAsToolStripMenuItem.Size = New System.Drawing.Size(161, 22)
         Me.SaveAsToolStripMenuItem.Text = "Save a Copy as..."
         '
         'ExitToolStripMenuItem
         '
         Me.ExitToolStripMenuItem.Name = "ExitToolStripMenuItem"
-        Me.ExitToolStripMenuItem.Size = New System.Drawing.Size(180, 22)
+        Me.ExitToolStripMenuItem.Size = New System.Drawing.Size(161, 22)
         Me.ExitToolStripMenuItem.Text = "Exit"
+        '
+        'ReportsToolStripMenuItem
+        '
+        Me.ReportsToolStripMenuItem.DropDownItems.AddRange(New System.Windows.Forms.ToolStripItem() {Me.AddressesInUseToolStripMenuItem, Me.S88InUseToolStripMenuItem})
+        Me.ReportsToolStripMenuItem.Name = "ReportsToolStripMenuItem"
+        Me.ReportsToolStripMenuItem.Size = New System.Drawing.Size(59, 20)
+        Me.ReportsToolStripMenuItem.Text = "Reports"
+        '
+        'AddressesInUseToolStripMenuItem
+        '
+        Me.AddressesInUseToolStripMenuItem.DropDownItems.AddRange(New System.Windows.Forms.ToolStripItem() {Me.CurrentPageToolStripMenuItem2, Me.AllPagesToolStripMenuItem2})
+        Me.AddressesInUseToolStripMenuItem.Name = "AddressesInUseToolStripMenuItem"
+        Me.AddressesInUseToolStripMenuItem.Size = New System.Drawing.Size(162, 22)
+        Me.AddressesInUseToolStripMenuItem.Text = "Addresses in Use"
+        '
+        'CurrentPageToolStripMenuItem2
+        '
+        Me.CurrentPageToolStripMenuItem2.Name = "CurrentPageToolStripMenuItem2"
+        Me.CurrentPageToolStripMenuItem2.Size = New System.Drawing.Size(143, 22)
+        Me.CurrentPageToolStripMenuItem2.Text = "Current Page"
+        '
+        'AllPagesToolStripMenuItem2
+        '
+        Me.AllPagesToolStripMenuItem2.Name = "AllPagesToolStripMenuItem2"
+        Me.AllPagesToolStripMenuItem2.Size = New System.Drawing.Size(143, 22)
+        Me.AllPagesToolStripMenuItem2.Text = "All Pages"
+        '
+        'S88InUseToolStripMenuItem
+        '
+        Me.S88InUseToolStripMenuItem.DropDownItems.AddRange(New System.Windows.Forms.ToolStripItem() {Me.CurrentPageToolStripMenuItem3, Me.AllPagesToolStripMenuItem3})
+        Me.S88InUseToolStripMenuItem.Name = "S88InUseToolStripMenuItem"
+        Me.S88InUseToolStripMenuItem.Size = New System.Drawing.Size(162, 22)
+        Me.S88InUseToolStripMenuItem.Text = "s88 in Use"
+        '
+        'CurrentPageToolStripMenuItem3
+        '
+        Me.CurrentPageToolStripMenuItem3.Name = "CurrentPageToolStripMenuItem3"
+        Me.CurrentPageToolStripMenuItem3.Size = New System.Drawing.Size(143, 22)
+        Me.CurrentPageToolStripMenuItem3.Text = "Current Page"
+        '
+        'AllPagesToolStripMenuItem3
+        '
+        Me.AllPagesToolStripMenuItem3.Name = "AllPagesToolStripMenuItem3"
+        Me.AllPagesToolStripMenuItem3.Size = New System.Drawing.Size(143, 22)
+        Me.AllPagesToolStripMenuItem3.Text = "All Pages"
         '
         'ToolsToolStripMenuItem
         '
         Me.ToolsToolStripMenuItem.DropDownItems.AddRange(New System.Windows.Forms.ToolStripItem() {Me.RefreshToolStripMenuItem, Me.VerboseToolStripMenuItem, Me.UseEnglishTermsForElementsToolStripMenuItem, Me.ShowInputFileToolStripMenuItem, Me.ShowOutputFileToolStripMenuItem, Me.ConsistencyCheckToolStripMenuItem, Me.DumpElementsToolStripMenuItem, Me.SetTestLevelToolStripMenuItem, Me.StatusVariablesToolStripMenuItem, Me.TurnOffDeveloperModeToolStripMenuItem})
         Me.ToolsToolStripMenuItem.Name = "ToolsToolStripMenuItem"
-        Me.ToolsToolStripMenuItem.Size = New System.Drawing.Size(46, 20)
+        Me.ToolsToolStripMenuItem.Size = New System.Drawing.Size(47, 20)
         Me.ToolsToolStripMenuItem.Text = "Tools"
         '
         'RefreshToolStripMenuItem
         '
         Me.RefreshToolStripMenuItem.Name = "RefreshToolStripMenuItem"
-        Me.RefreshToolStripMenuItem.Size = New System.Drawing.Size(237, 22)
+        Me.RefreshToolStripMenuItem.Size = New System.Drawing.Size(238, 22)
         Me.RefreshToolStripMenuItem.Text = "Refresh"
         '
         'VerboseToolStripMenuItem
         '
         Me.VerboseToolStripMenuItem.Name = "VerboseToolStripMenuItem"
-        Me.VerboseToolStripMenuItem.Size = New System.Drawing.Size(237, 22)
+        Me.VerboseToolStripMenuItem.Size = New System.Drawing.Size(238, 22)
         Me.VerboseToolStripMenuItem.Text = "Verbose"
         '
         'UseEnglishTermsForElementsToolStripMenuItem
         '
         Me.UseEnglishTermsForElementsToolStripMenuItem.CheckOnClick = True
         Me.UseEnglishTermsForElementsToolStripMenuItem.Name = "UseEnglishTermsForElementsToolStripMenuItem"
-        Me.UseEnglishTermsForElementsToolStripMenuItem.Size = New System.Drawing.Size(237, 22)
+        Me.UseEnglishTermsForElementsToolStripMenuItem.Size = New System.Drawing.Size(238, 22)
         Me.UseEnglishTermsForElementsToolStripMenuItem.Text = "Use English Terms for Elements"
         '
         'ShowInputFileToolStripMenuItem
         '
         Me.ShowInputFileToolStripMenuItem.Name = "ShowInputFileToolStripMenuItem"
-        Me.ShowInputFileToolStripMenuItem.Size = New System.Drawing.Size(237, 22)
+        Me.ShowInputFileToolStripMenuItem.Size = New System.Drawing.Size(238, 22)
         Me.ShowInputFileToolStripMenuItem.Text = "Show Input File"
         '
         'ShowOutputFileToolStripMenuItem
         '
         Me.ShowOutputFileToolStripMenuItem.Name = "ShowOutputFileToolStripMenuItem"
-        Me.ShowOutputFileToolStripMenuItem.Size = New System.Drawing.Size(237, 22)
+        Me.ShowOutputFileToolStripMenuItem.Size = New System.Drawing.Size(238, 22)
         Me.ShowOutputFileToolStripMenuItem.Text = "Show Output File"
         '
         'ConsistencyCheckToolStripMenuItem
         '
         Me.ConsistencyCheckToolStripMenuItem.Name = "ConsistencyCheckToolStripMenuItem"
-        Me.ConsistencyCheckToolStripMenuItem.Size = New System.Drawing.Size(237, 22)
+        Me.ConsistencyCheckToolStripMenuItem.Size = New System.Drawing.Size(238, 22)
         Me.ConsistencyCheckToolStripMenuItem.Text = "Consistency Check"
         '
         'DumpElementsToolStripMenuItem
         '
         Me.DumpElementsToolStripMenuItem.Name = "DumpElementsToolStripMenuItem"
-        Me.DumpElementsToolStripMenuItem.Size = New System.Drawing.Size(237, 22)
+        Me.DumpElementsToolStripMenuItem.Size = New System.Drawing.Size(238, 22)
         Me.DumpElementsToolStripMenuItem.Text = "Dump Elements"
         '
         'SetTestLevelToolStripMenuItem
         '
         Me.SetTestLevelToolStripMenuItem.Name = "SetTestLevelToolStripMenuItem"
-        Me.SetTestLevelToolStripMenuItem.Size = New System.Drawing.Size(237, 22)
+        Me.SetTestLevelToolStripMenuItem.Size = New System.Drawing.Size(238, 22)
         Me.SetTestLevelToolStripMenuItem.Text = "Set Test Level"
         '
         'StatusVariablesToolStripMenuItem
         '
         Me.StatusVariablesToolStripMenuItem.Name = "StatusVariablesToolStripMenuItem"
-        Me.StatusVariablesToolStripMenuItem.Size = New System.Drawing.Size(237, 22)
+        Me.StatusVariablesToolStripMenuItem.Size = New System.Drawing.Size(238, 22)
         Me.StatusVariablesToolStripMenuItem.Text = "Status variables"
         '
         'TurnOffDeveloperModeToolStripMenuItem
         '
         Me.TurnOffDeveloperModeToolStripMenuItem.Name = "TurnOffDeveloperModeToolStripMenuItem"
-        Me.TurnOffDeveloperModeToolStripMenuItem.Size = New System.Drawing.Size(237, 22)
+        Me.TurnOffDeveloperModeToolStripMenuItem.Size = New System.Drawing.Size(238, 22)
         Me.TurnOffDeveloperModeToolStripMenuItem.Text = "Turn Off Developer Mode"
         '
         'HelpToolStripMenuItem
@@ -1412,13 +1466,13 @@ Partial Class Form1
         'HowToUseToolStripMenuItem
         '
         Me.HowToUseToolStripMenuItem.Name = "HowToUseToolStripMenuItem"
-        Me.HowToUseToolStripMenuItem.Size = New System.Drawing.Size(134, 22)
-        Me.HowToUseToolStripMenuItem.Text = "How to use"
+        Me.HowToUseToolStripMenuItem.Size = New System.Drawing.Size(135, 22)
+        Me.HowToUseToolStripMenuItem.Text = "How to Use"
         '
         'LimitationsToolStripMenuItem
         '
         Me.LimitationsToolStripMenuItem.Name = "LimitationsToolStripMenuItem"
-        Me.LimitationsToolStripMenuItem.Size = New System.Drawing.Size(134, 22)
+        Me.LimitationsToolStripMenuItem.Size = New System.Drawing.Size(135, 22)
         Me.LimitationsToolStripMenuItem.Text = "Limitations"
         '
         'QuitToolStripMenuItem
@@ -7584,7 +7638,7 @@ Partial Class Form1
         '
         'btnDisplayRefreshEdit
         '
-        Me.btnDisplayRefreshEdit.BackColor = System.Drawing.Color.FromArgb(CType(CType(255, Byte), Integer), CType(CType(192, Byte), Integer), CType(CType(128, Byte), Integer))
+        Me.btnDisplayRefreshEdit.BackColor = System.Drawing.SystemColors.ControlLight
         Me.btnDisplayRefreshEdit.Location = New System.Drawing.Point(6, 220)
         Me.btnDisplayRefreshEdit.Name = "btnDisplayRefreshEdit"
         Me.btnDisplayRefreshEdit.Size = New System.Drawing.Size(135, 22)
@@ -7890,6 +7944,8 @@ Partial Class Form1
         '
         'grpLayoutPages
         '
+        Me.grpLayoutPages.Controls.Add(Me.txtCombine)
+        Me.grpLayoutPages.Controls.Add(Me.btnCombinePages)
         Me.grpLayoutPages.Controls.Add(Me.cmdRevealAddressesPage)
         Me.grpLayoutPages.Controls.Add(Me.cmdRevealTextPage)
         Me.grpLayoutPages.Controls.Add(Me.btnDuplicatePage)
@@ -7904,6 +7960,29 @@ Partial Class Form1
         Me.grpLayoutPages.TabIndex = 530
         Me.grpLayoutPages.TabStop = False
         Me.grpLayoutPages.Text = "Layout Pages"
+        '
+        'txtCombine
+        '
+        Me.txtCombine.BackColor = System.Drawing.Color.FromArgb(CType(CType(255, Byte), Integer), CType(CType(192, Byte), Integer), CType(CType(192, Byte), Integer))
+        Me.txtCombine.Font = New System.Drawing.Font("Microsoft Sans Serif", 9.75!, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, CType(0, Byte))
+        Me.txtCombine.Location = New System.Drawing.Point(115, 22)
+        Me.txtCombine.Multiline = True
+        Me.txtCombine.Name = "txtCombine"
+        Me.txtCombine.Size = New System.Drawing.Size(40, 20)
+        Me.txtCombine.TabIndex = 529
+        Me.txtCombine.Text = "txtCombine"
+        Me.txtCombine.Visible = False
+        '
+        'btnCombinePages
+        '
+        Me.btnCombinePages.BackColor = System.Drawing.Color.FromArgb(CType(CType(255, Byte), Integer), CType(CType(255, Byte), Integer), CType(CType(192, Byte), Integer))
+        Me.btnCombinePages.ForeColor = System.Drawing.SystemColors.ControlText
+        Me.btnCombinePages.Location = New System.Drawing.Point(6, 105)
+        Me.btnCombinePages.Name = "btnCombinePages"
+        Me.btnCombinePages.Size = New System.Drawing.Size(122, 22)
+        Me.btnCombinePages.TabIndex = 528
+        Me.btnCombinePages.Text = "Combine Two Pages"
+        Me.btnCombinePages.UseVisualStyleBackColor = False
         '
         'cmdRevealAddressesPage
         '
@@ -8058,7 +8137,7 @@ Partial Class Form1
         '
         Me.AutoScaleDimensions = New System.Drawing.SizeF(6.0!, 13.0!)
         Me.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font
-        Me.ClientSize = New System.Drawing.Size(1277, 787)
+        Me.ClientSize = New System.Drawing.Size(1309, 787)
         Me.Controls.Add(Me.grpMoveWindow)
         Me.Controls.Add(Me.grpLayoutPages)
         Me.Controls.Add(Me.picIcons88CurveParallelOnOff)
@@ -9363,4 +9442,13 @@ Partial Class Form1
     Friend WithEvents picIconPermRight As PictureBox
     Friend WithEvents picIconPermLeft As PictureBox
     Friend WithEvents grpCustom As GroupBox
+    Friend WithEvents btnCombinePages As Button
+    Friend WithEvents txtCombine As TextBox
+    Friend WithEvents ReportsToolStripMenuItem As ToolStripMenuItem
+    Friend WithEvents AddressesInUseToolStripMenuItem As ToolStripMenuItem
+    Friend WithEvents CurrentPageToolStripMenuItem2 As ToolStripMenuItem
+    Friend WithEvents AllPagesToolStripMenuItem2 As ToolStripMenuItem
+    Friend WithEvents S88InUseToolStripMenuItem As ToolStripMenuItem
+    Friend WithEvents CurrentPageToolStripMenuItem3 As ToolStripMenuItem
+    Friend WithEvents AllPagesToolStripMenuItem3 As ToolStripMenuItem
 End Class

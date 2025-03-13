@@ -112,6 +112,9 @@
     <Import Include="System.Threading.Tasks" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="CustomInputForm.vb">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="EnvironmentHandler3.vb" />
     <Compile Include="Form1.vb">
       <SubType>Form</SubType>
